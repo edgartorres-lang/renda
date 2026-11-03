@@ -19,7 +19,7 @@ O código fica no GitHub (`https://github.com/edgartorres-lang/renda.git`, branc
 3. **Build** → **Dockerfile** (arquivo `Dockerfile`).
 4. **Ambiente (Environment)**: cole as linhas do `.env` (`ADMIN_EMAIL`, `ADMIN_SENHA`, `SESSION_SECRET`). `DOMINIO` e `APP_PORT` não são necessários.
 5. **Montagens (Mounts)** → **Volume**: nome `renda-data`, caminho de montagem `/app/data`. É onde ficam o banco e os backups. **Sem isso, os dados somem a cada deploy.**
-6. **Domínios**: `renda.setornorteseguros.com.br`, HTTPS ligado, porta do container `3000`.
+6. **Domínios**: `renda.setornorteseguros.com.br`, HTTPS ligado, porta do container `80` (o EasyPanel define `PORT=80` no app, e a ferramenta usa essa porta).
 7. Clique em **Implantar (Deploy)**. Depois, acesse `https://renda.setornorteseguros.com.br` e entre com o admin.
 
 **Atualizar:** envie as mudanças para o GitHub (`git push`) e clique em **Implantar** no app.

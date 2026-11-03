@@ -15,7 +15,8 @@ COPY public ./public
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/data
 
+# O EasyPanel define PORT (normalmente 80); o healthcheck segue a porta em uso.
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO /dev/null http://127.0.0.1:3000/login.html || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO /dev/null "http://127.0.0.1:${PORT:-3000}/login.html" || exit 1
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server/index.js"]
