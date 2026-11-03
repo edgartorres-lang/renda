@@ -1,7 +1,7 @@
-/* Banco SQLite (better-sqlite3): esquema, datas e store de sessão. */
+/* Banco SQLite (node:sqlite, embutido no Node 24, sem compilação): esquema, datas e store de sessão. */
 const path = require("path");
 const fs = require("fs");
-const Database = require("better-sqlite3");
+const sqlite = require("node:sqlite");
 const session = require("express-session");
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "..", "data", "app.db");
@@ -18,10 +18,23 @@ if (fs.existsSync(RESTAURAR)) {
   console.log(`Banco restaurado a partir de restaurar.db (o anterior ficou em ${path.basename(DB_PATH)}.antes-${stamp})`);
 }
 
-const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-db.pragma("busy_timeout = 5000");
+const db = new sqlite.DatabaseSync(DB_PATH);
+db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+
+/* Mesmo uso do better-sqlite3: db.transaction(fn)() roda fn dentro de BEGIN/COMMIT. */
+db.transaction = (fn) => (...args) => {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const r = fn(...args);
+    db.exec("COMMIT");
+    return r;
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+};
+/* Cópia consistente do banco num arquivo (API de backup do SQLite). */
+db.backup = (destino) => sqlite.backup(db, destino);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (

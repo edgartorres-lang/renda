@@ -129,7 +129,7 @@ const S = (nome, renda) => ({ cli: { nome, sexo: "F", idade: "34", prof: "fisio"
   await t("status inválido → 400", async () => assert.strictEqual((await a("PUT", `/api/clientes/${idA}/status`, { status: "x" })).status, 400));
   await t("'Retomadas de hoje' lista quem venceu e respeita o dono", async () => {
     if (!process.env.DB_PATH) throw new Error("defina DB_PATH para este teste");
-    const db = new (require("better-sqlite3"))(process.env.DB_PATH);
+    const db = new (require("node:sqlite").DatabaseSync)(process.env.DB_PATH);
     db.prepare("UPDATE clientes SET proxima_retomada = ? WHERE id = ?").run(hojeMais(0), idA);
     db.prepare("UPDATE clientes SET proxima_retomada = ? WHERE id = ?").run(hojeMais(-1), idB);
     db.close();
@@ -150,7 +150,7 @@ const S = (nome, renda) => ({ cli: { nome, sexo: "F", idade: "34", prof: "fisio"
   await t("excluir cliente apaga versões e eventos", async () => {
     assert.strictEqual((await a("DELETE", `/api/clientes/${idA}`)).status, 200);
     assert.strictEqual((await a("GET", `/api/clientes/${idA}`)).status, 404);
-    const db = new (require("better-sqlite3"))(process.env.DB_PATH, { readonly: true });
+    const db = new (require("node:sqlite").DatabaseSync)(process.env.DB_PATH, { readOnly: true });
     const n = db.prepare("SELECT (SELECT COUNT(*) FROM estudos WHERE cliente_id = ?) + (SELECT COUNT(*) FROM eventos WHERE cliente_id = ?) AS n").get(idA, idA).n;
     db.close(); assert.strictEqual(n, 0);
   });

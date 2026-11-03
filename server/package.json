@@ -4,14 +4,13 @@
   "private": true,
   "description": "Renda Protegida · Setor Norte Seguros · servidor com login e histórico de clientes",
   "main": "index.js",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=24" },
   "scripts": {
     "start": "node index.js",
     "test": "node test/api.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
-    "better-sqlite3": "^12.4.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.1",

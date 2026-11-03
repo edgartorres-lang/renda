@@ -1,16 +1,14 @@
 # Renda Protegida · Setor Norte Seguros
-FROM node:20-alpine
+# Node 24: o SQLite já vem embutido (node:sqlite), então não há nada para compilar no build.
+FROM node:24-alpine
 
-# tzdata: "hoje" no horário de Macapá · sqlite: backup com .backup · su-exec: rodar como usuário node
+# tzdata: "hoje" no horário de Macapá · sqlite: backup com .backup pelo terminal · su-exec: rodar como usuário node
 RUN apk add --no-cache tzdata sqlite su-exec
-ENV TZ=America/Belem NODE_ENV=production PORT=3000
+ENV TZ=America/Belem NODE_ENV=production PORT=3000 NODE_OPTIONS=--disable-warning=ExperimentalWarning
 
 WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
-RUN apk add --no-cache --virtual .build python3 make g++ \
- && cd server && npm ci --omit=dev \
- && npm cache clean --force \
- && apk del .build
+RUN cd server && npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY server ./server
 COPY public ./public

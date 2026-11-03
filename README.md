@@ -4,7 +4,7 @@ Ferramenta de estudo, apresentação e mensagens de WhatsApp, com login, usuári
 
 ```
 public/      ferramenta (index.html, app.js, parser.js, clientes.js, login.html, fontes, imagens)
-server/      servidor Node.js (Express + better-sqlite3)
+server/      servidor Node.js 24 (Express + SQLite embutido do Node, sem compilação)
 data/        banco app.db (volume Docker; NÃO apague)
 backups/     cópias diárias do banco (30 dias)
 scripts/     backup, restauração, cron e verificação do VPS
