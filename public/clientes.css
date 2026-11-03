@@ -1,0 +1,37 @@
+/* Aba Clientes, cabeçalho com usuário e administração (usa as variáveis de styles.css) */
+.user{display:flex;align-items:center;gap:10px;font-weight:800;color:#9FB8C9;font-size:13px;border-left:1px solid #2A5A76;padding-left:14px}
+#btnSalvar{padding:7px 16px}
+#btnSalvar:disabled{opacity:.6;cursor:wait}
+.cli-wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.cli-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.cli-head h3{margin:0}
+.cli-filtros{display:flex;gap:8px;flex-wrap:wrap}
+.cli-filtros input,.cli-filtros select,table.cli select,.novo-user input,.novo-user select{border:1.5px solid #D2DCE4;border-radius:9px;padding:7px 10px;font:600 14px Nunito,sans-serif;color:var(--ink);background:#fff;outline:none}
+.cli-filtros input{min-width:230px}
+.cli-filtros input:focus,.cli-filtros select:focus,.novo-user input:focus{border-color:var(--blue)}
+.tbl-wrap{overflow-x:auto}
+table.cli{width:100%;border-collapse:collapse;font-size:14px}
+table.cli th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);padding:6px 8px;border-bottom:1.5px solid var(--line);white-space:nowrap}
+table.cli td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.cli .n{text-align:right;white-space:nowrap}
+table.cli tr.atual>td{background:#F1F8EC}
+table.cli select{padding:5px 8px;font-size:13px}
+table.cli .acts{white-space:nowrap;text-align:right}
+table.cli .acts button{padding:5px 10px;font-size:12.5px;margin-left:4px}
+button.lnk{border:0;background:none;padding:0;color:var(--navy);font-weight:900;font-size:14.5px;text-align:left}
+button.lnk:hover{text-decoration:underline}
+button.del{color:var(--red)}
+button.del:hover{border-color:var(--red)}
+.pill{display:inline-block;background:var(--green);color:var(--navy);border-radius:20px;padding:0 9px;font-size:12px;margin-left:6px;vertical-align:1px}
+.ret-it{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+.ret-it:first-of-type{border-top:0}
+.atras{color:var(--red);font-weight:800}
+tr.hist>td{background:#F6F9FB}
+.hist-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:820px){.hist-grid{grid-template-columns:1fr}}
+.hist-grid h4{margin:2px 0 8px;font-size:13px;color:var(--navy)}
+.hv{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px}
+.hv button{padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.he{padding:4px 0;border-top:1px solid var(--line)}
+.novo-user{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.novo-user input{flex:1;min-width:160px}

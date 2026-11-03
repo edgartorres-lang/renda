@@ -1,0 +1,39 @@
+# Renda Protegida · Setor Norte Seguros
+#
+# Sem proxy no VPS:        docker compose --profile caddy up -d --build   (Caddy com HTTPS automático)
+# Com nginx/traefik/caddy: docker compose up -d --build                    (o proxy existente aponta para 127.0.0.1:3000)
+# Veja o README.md.
+services:
+  app:
+    build: .
+    image: renda-protegida:latest
+    container_name: renda-protegida
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: America/Belem
+    volumes:
+      - ./data:/app/data
+    ports:
+      # só no localhost do VPS, para um proxy do host (nginx/caddy). Não fica exposto na internet.
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+
+  caddy:
+    image: caddy:2.8-alpine
+    profiles: ["caddy"]
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      DOMINIO: ${DOMINIO}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

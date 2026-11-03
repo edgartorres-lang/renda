@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Entrar · Renda Protegida</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  [hidden]{display:none!important}
+  :root{--navy:#0D3A53;--navy2:#164C6B;--blue:#396C97;--green:#5DB84E;--ink:#1E2B36;--ink2:#3C4B57;--mut:#5E6B76;--red:#D9434A}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;font-family:Nunito,system-ui,sans-serif;color:var(--ink)}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;
+    background:radial-gradient(circle at 85% 10%,rgba(93,184,78,.18),transparent 40%),linear-gradient(160deg,var(--navy) 0%,var(--navy2) 100%)}
+  .box{width:100%;max-width:400px;background:#fff;border-radius:22px;padding:34px 30px 28px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .logo{display:block;height:46px;margin:0 auto 22px}
+  .ey{text-align:center;font:800 11.5px Montserrat,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--green)}
+  h1{text-align:center;font:800 26px Montserrat,sans-serif;color:var(--navy);margin:6px 0 4px}
+  .sub{text-align:center;color:var(--mut);font-size:14px;margin:0 0 22px}
+  label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:800;color:var(--ink2);margin-bottom:14px}
+  input{border:1.5px solid #D2DCE4;border-radius:11px;padding:11px 13px;font:600 15px Nunito,sans-serif;color:var(--ink);outline:none;width:100%}
+  input:focus{border-color:var(--blue)}
+  button{width:100%;margin-top:6px;font:800 15px Nunito,sans-serif;cursor:pointer;border:0;border-radius:11px;padding:13px;background:var(--green);color:var(--navy)}
+  button:hover{background:#4FA841}
+  button:disabled{opacity:.6;cursor:wait}
+  .msg{min-height:20px;margin:12px 0 0;font-size:13.5px;font-weight:700;color:var(--red);text-align:center}
+  .msg.ok{color:#3F7F2E}
+  .foot{margin-top:22px;text-align:center;font-size:11.5px;color:var(--mut)}
+</style>
+</head>
+<body>
+<main class="box">
+  <img class="logo" src="img/logo.png" alt="Setor Norte Seguros">
+  <div class="ey">Setor Norte Seguros</div>
+  <h1>Renda Protegida</h1>
+
+  <form id="fLogin" autocomplete="on">
+    <p class="sub">Entre para acessar os estudos dos seus clientes.</p>
+    <label>E-mail<input name="email" type="email" autocomplete="username" required autofocus></label>
+    <label>Senha<input name="senha" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Entrar</button>
+  </form>
+
+  <form id="fSenha" hidden>
+    <p class="sub">Primeiro acesso: defina uma senha nova, só sua.</p>
+    <label>Senha atual (provisória)<input name="atual" type="password" autocomplete="current-password" required></label>
+    <label>Nova senha<input name="nova" type="password" autocomplete="new-password" minlength="8" required></label>
+    <label>Repita a nova senha<input name="nova2" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button type="submit">Salvar nova senha</button>
+  </form>
+
+  <p class="msg" id="msg" role="alert"></p>
+  <div class="foot">Torres Norte Corretora de Seguros Ltda · SUSEP 202087923</div>
+</main>
+<script src="login.js"></script>
+</body>
+</html>

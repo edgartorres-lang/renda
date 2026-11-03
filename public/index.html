@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renda Protegida · Estudo e Apresentação</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="clientes.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="img/logo.png" alt="Setor Norte Seguros"><span>Renda Protegida</span></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="clientes" class="on">0 · Clientes</button>
+    <button data-tab="dados">1 · Dados</button>
+    <button data-tab="estudo">2 · Estudo (PDF)</button>
+    <button data-tab="deck">3 · Apresentação</button>
+    <button data-tab="wa">4 · WhatsApp</button>
+  </nav>
+  <div class="who"><span id="whoName">Novo cliente</span><button class="ghost" id="btnReset">Novo cliente</button><button class="primary" id="btnSalvar" title="Salva uma nova versão do estudo deste cliente">Salvar</button></div>
+  <div class="user"><span id="userName"></span><button class="ghost" id="btnSair">Sair</button></div>
+</header>
+
+<main>
+  <!-- CLIENTES -->
+  <section class="view on" id="v-clientes">
+    <div class="cli-wrap">
+      <div class="card" id="retomadas"></div>
+      <div class="card">
+        <div class="cli-head">
+          <h3>Clientes</h3>
+          <div class="cli-filtros">
+            <input id="cliBusca" type="search" placeholder="Buscar por nome" autocomplete="off">
+            <select id="cliStatus"></select>
+            <button class="primary" id="cliNovo">+ Novo cliente</button>
+          </div>
+        </div>
+        <div id="cliLista"></div>
+      </div>
+      <div class="card" id="usuarios" hidden></div>
+    </div>
+  </section>
+
+  <!-- DADOS -->
+  <section class="view" id="v-dados">
+    <div class="dados-grid">
+      <div class="form" id="form"></div>
+      <aside class="side">
+        <div class="card sticky">
+          <h3>Resumo</h3>
+          <div id="resumo"></div>
+          <h3 style="margin-top:18px">Conferência</h3>
+          <div id="alertas"></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ESTUDO -->
+  <section class="view" id="v-estudo">
+    <div class="toolbar">
+      <div><b>Estudo em PDF</b><span class="muted"> · 3 páginas A4 para enviar pelo WhatsApp depois da mensagem de resumo</span></div>
+      <button class="primary" id="btnPdfEstudo">Baixar PDF do estudo</button>
+    </div>
+    <div class="pages-wrap"><div class="pages" id="pages"></div></div>
+  </section>
+
+  <!-- APRESENTAÇÃO -->
+  <section class="view" id="v-deck">
+    <div class="deck-grid">
+      <aside class="deck-side">
+        <button class="primary big" id="btnPresent">▶ Apresentar em tela cheia</button>
+        <div class="muted small" style="margin:6px 0 16px">Setas ou clique para avançar · Esc para sair</div>
+        <h4>Imagem de capa</h4>
+        <div class="covers" id="covers"></div>
+        <label class="upload small">Enviar outra imagem<input type="file" accept="image/*" id="coverUpload" hidden></label>
+        <h4>Slides</h4>
+        <div id="slideToggles"></div>
+        <h4>Exportar</h4>
+        <div class="row2"><button id="btnPptx">Baixar PPTX</button><button id="btnPdfDeck">Baixar PDF</button></div>
+      </aside>
+      <div class="deck-list" id="deckList"></div>
+    </div>
+  </section>
+
+  <!-- WHATSAPP -->
+  <section class="view" id="v-wa">
+    <div class="wa-grid">
+      <aside class="wa-nav card">
+        <h4>Opção que as mensagens destacam</h4>
+        <div class="seg" id="waOpt"></div>
+        <div id="waNav"></div>
+      </aside>
+      <div class="wa-main" id="waMain"></div>
+    </div>
+  </section>
+</main>
+
+<!-- modo apresentação -->
+<div id="present" class="present" hidden>
+  <div class="present-stage" id="presentStage"></div>
+  <div class="present-bar"><span id="presentCount"></span><button id="presentExit">Sair (Esc)</button></div>
+</div>
+
+<!-- área de captura (fora da tela) -->
+<div id="capture" class="capture"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="lib/pdf.min.js"></script>
+<script src="parser.js"></script>
+<script src="app.js"></script>
+<script src="clientes.js"></script>
+</body>
+</html>

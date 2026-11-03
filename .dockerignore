@@ -1,0 +1,7 @@
+data
+backups
+.env
+**/node_modules
+**/desktop.ini
+*.zip
+server/test

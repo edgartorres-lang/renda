@@ -1,0 +1,4 @@
+Renda Protegida · Setor Norte Seguros
+
+Veja o README.md: instalação no VPS com Docker, usuários, backup e atualização.
+A ferramenta fica em public/ e o servidor em server/.
