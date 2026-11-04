@@ -35,7 +35,7 @@ async function iniciar() {
   try { if (localStorage.getItem(OWNER) !== String(ME.id)) { A.setState({}); localStorage.setItem(OWNER, String(ME.id)); } } catch (e) {}
   salvo = foto();
   $("#cliStatus").innerHTML = `<option value="">Todos os status</option>` + STATUS.map(([k, t]) => `<option value="${k}">${t}</option>`).join("");
-  if (ME.papel === "admin") $("#usuarios").hidden = false;
+  if (ME.papel === "admin") document.querySelectorAll("#gearMenu .adm").forEach((b) => (b.hidden = false));
   carregarTudo();
 }
 
@@ -65,12 +65,56 @@ $("#btnSalvar").addEventListener("click", async (ev) => {
   btn.disabled = false; btn.textContent = "Salvar";
 });
 
-$("#btnSair").addEventListener("click", async () => {
+async function sair() {
   if (!confirmaDescarte()) return;
   try { await fetch("/api/logout", { method: "POST", credentials: "same-origin" }); } catch (e) {}
   try { localStorage.removeItem(A.KEY); localStorage.removeItem(OWNER); } catch (e) {}
   location.href = "/login.html";
-});
+}
+
+/* ---------- Ajustes (engrenagem): senha, usuários, backup, sair ---------- */
+const gearBtn = $("#btnGear"), gearMenu = $("#gearMenu");
+function menu(abrir) { gearMenu.hidden = !abrir; gearBtn.setAttribute("aria-expanded", abrir ? "true" : "false"); }
+gearBtn.addEventListener("click", (e) => { e.stopPropagation(); menu(gearMenu.hidden); });
+document.addEventListener("click", (e) => { if (!gearMenu.hidden && !gearMenu.contains(e.target)) menu(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu(false); fecharModal(); } });
+gearMenu.querySelectorAll("[data-gear]").forEach((b) => b.addEventListener("click", () => {
+  menu(false);
+  const k = b.dataset.gear;
+  if (k === "sair") sair();
+  if (k === "senha") janelaSenha();
+  if (k === "usuarios") { abrirModal("Usuários", `<div class="muted small">Carregando…</div>`); carregarUsuarios(); }
+  if (k === "backup") janelaBackup();
+}));
+function abrirModal(titulo, html) { $("#modalTitle").textContent = titulo; $("#modalBody").innerHTML = html; $("#modal").hidden = false; }
+function fecharModal() { $("#modal").hidden = true; $("#modalBody").innerHTML = ""; }
+$("#modalX").addEventListener("click", fecharModal);
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") fecharModal(); });
+
+function janelaSenha() {
+  abrirModal("Alterar senha", `<form id="fSenhaNova" class="form-col" autocomplete="off">
+    <label class="f">Senha atual<input name="atual" type="password" autocomplete="current-password" required></label>
+    <label class="f">Nova senha<input name="nova" type="password" minlength="8" autocomplete="new-password" required></label>
+    <label class="f">Repita a nova senha<input name="nova2" type="password" minlength="8" autocomplete="new-password" required></label>
+    <div class="muted small">Mínimo de 8 caracteres.</div>
+    <div><button class="primary">Salvar nova senha</button></div></form>`);
+  $("#fSenhaNova").addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = new FormData(e.target);
+    if (f.get("nova") !== f.get("nova2")) { A.toast("As duas senhas novas não são iguais."); return; }
+    try {
+      const r = await fetch("/api/senha", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ atual: f.get("atual"), nova: f.get("nova") }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.erro || "erro " + r.status);
+      fecharModal(); A.toast("Senha alterada.");
+    } catch (er) { A.toast("Não foi possível: " + er.message); }
+  });
+}
+function janelaBackup() {
+  abrirModal("Backup", `<p class="small" style="margin-top:0">O servidor faz um backup automático todo dia às 02:30 e guarda os últimos 30 dias.</p>
+    <p class="small">Baixe uma cópia de vez em quando e guarde fora do servidor, por exemplo no Google Drive.</p>
+    <button class="primary" id="btnBackup">Baixar backup agora</button>`);
+  $("#btnBackup").onclick = () => { const a = document.createElement("a"); a.href = "/api/backup"; a.download = ""; document.body.appendChild(a); a.click(); a.remove(); A.toast("Backup sendo baixado…"); };
+}
 
 $("#cliNovo").addEventListener("click", () => {
   if (!confirmaDescarte()) return;
@@ -109,7 +153,7 @@ let tBusca;
 $("#cliBusca").addEventListener("input", () => { clearTimeout(tBusca); tBusca = setTimeout(carregarLista, 250); });
 $("#cliStatus").addEventListener("change", carregarLista);
 
-function carregarTudo() { carregarRetomadas(); carregarLista(); if (ME.papel === "admin") carregarUsuarios(); }
+function carregarTudo() { carregarRetomadas(); carregarLista(); }
 
 async function carregarRetomadas() {
   const box = $("#retomadas");
@@ -181,10 +225,11 @@ async function excluir(id, nome) {
 
 /* ---------- usuários (admin) ---------- */
 async function carregarUsuarios() {
-  const box = $("#usuarios");
+  const box = $("#modalBody");
+  if ($("#modal").hidden) return;
   try {
     const { usuarios } = await api("GET", "/api/usuarios");
-    box.innerHTML = `<h3>Usuários</h3>
+    box.innerHTML = `
       <div class="tbl-wrap"><table class="cli"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th class="n">Clientes</th><th>Situação</th><th></th></tr></thead><tbody>
       ${usuarios.map((u) => `<tr><td>${esc(u.nome)}${u.id === ME.id ? ' <span class="muted small">(você)</span>' : ""}</td><td class="small">${esc(u.email)}</td><td>${u.papel === "admin" ? "Admin" : "Corretor"}</td><td class="n">${u.clientes}</td>
         <td class="small">${u.ativo ? "Ativo" : "Desativado"}${u.trocarSenha ? " · troca de senha pendente" : ""}</td>
@@ -195,11 +240,7 @@ async function carregarUsuarios() {
         <input name="senha" type="text" placeholder="Senha provisória (mín. 8)" minlength="8" required autocomplete="new-password">
         <select name="papel"><option value="corretor">Corretor</option><option value="admin">Admin</option></select>
         <button class="primary">Criar usuário</button>
-      </form><div class="muted small">A pessoa troca a senha provisória no primeiro login.</div>
-      <h3 style="margin-top:22px">Backup</h3>
-      <div class="muted small">O servidor faz um backup automático todo dia às 02:30 e guarda 30 dias. Baixe uma cópia de vez em quando e guarde fora do servidor (Google Drive).</div>
-      <p><button type="button" id="btnBackup">Baixar backup agora</button></p>`;
-    $("#btnBackup").onclick = () => { const a = document.createElement("a"); a.href = "/api/backup"; a.download = ""; document.body.appendChild(a); a.click(); a.remove(); };
+      </form><div class="muted small">A pessoa troca a senha provisória no primeiro login.</div>`;
     box.querySelectorAll("[data-uat]").forEach((b) => b.addEventListener("click", () => acaoUser(b.dataset.uat, { ativo: !!+b.dataset.v })));
     box.querySelectorAll("[data-usen]").forEach((b) => b.addEventListener("click", () => {
       const s = prompt(`Senha provisória para ${b.dataset.nome} (mínimo 8 caracteres):`); if (s) acaoUser(b.dataset.usen, { senha: s });
@@ -212,7 +253,7 @@ async function carregarUsuarios() {
       e.preventDefault(); const f = new FormData(e.target);
       try { await api("POST", "/api/usuarios", Object.fromEntries(f)); A.toast("Usuário criado"); carregarUsuarios(); } catch (er) { A.toast("Erro: " + er.message); }
     });
-  } catch (e) { box.innerHTML = `<h3>Usuários</h3><div class="muted small">Erro: ${esc(e.message)}</div>`; }
+  } catch (e) { box.innerHTML = `<div class="muted small">Erro: ${esc(e.message)}</div>`; }
 }
 async function acaoUser(id, body) {
   try { await api("PUT", `/api/usuarios/${id}`, body); A.toast("Usuário atualizado"); carregarUsuarios(); } catch (e) { A.toast("Erro: " + e.message); }

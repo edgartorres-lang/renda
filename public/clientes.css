@@ -1,6 +1,22 @@
 /* Aba Clientes, cabeçalho com usuário e administração (usa as variáveis de styles.css) */
 .user{display:flex;align-items:center;gap:10px;font-weight:800;color:#9FB8C9;font-size:13px;border-left:1px solid #2A5A76;padding-left:14px}
 #btnSalvar{padding:7px 16px}
+/* engrenagem (Ajustes) */
+.gear-wrap{position:relative}
+button.gear{display:flex;align-items:center;gap:6px;padding:6px 12px}
+.gear-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:60;min-width:210px;background:#fff;border-radius:12px;box-shadow:0 12px 34px rgba(13,58,83,.25);padding:6px;display:flex;flex-direction:column}
+.gear-menu[hidden]{display:none}
+.gear-menu button{border:0;background:none;text-align:left;padding:9px 12px;border-radius:8px;color:var(--navy);font-size:14px}
+.gear-menu button:hover{background:#EEF3F7}
+.gear-menu button.sair{color:var(--red)}
+.gear-menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+/* janela */
+.modal{position:fixed;inset:0;z-index:80;background:rgba(13,58,83,.45);display:flex;align-items:flex-start;justify-content:center;padding:70px 16px 16px;overflow:auto}
+.modal-box{background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);width:min(880px,100%);padding:18px 20px 20px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.modal-head h3{margin:0;color:var(--navy);font-size:17px}
+.modal-x{border:0;background:none;font-size:24px;line-height:1;padding:2px 8px;color:var(--mut)}
+.form-col{display:flex;flex-direction:column;gap:10px;max-width:360px}
 #btnSalvar:disabled{opacity:.6;cursor:wait}
 .cli-wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .cli-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}

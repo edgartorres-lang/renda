@@ -24,7 +24,7 @@ O código fica no GitHub (`https://github.com/edgartorres-lang/renda.git`, branc
 
 **Atualizar:** envie as mudanças para o GitHub (`git push`) e clique em **Implantar** no app.
 
-**Backup no EasyPanel:** o próprio servidor faz um backup por dia às 02:30, em `/app/data/backups` (dentro do volume), e guarda 30 dias. O admin baixa uma cópia na hora pelo botão **Baixar backup agora**, na aba Clientes. Guarde essas cópias fora do servidor. Para restaurar, abra o **Console** do app no EasyPanel:
+**Backup no EasyPanel:** o próprio servidor faz um backup por dia às 02:30, em `/app/data/backups` (dentro do volume), e guarda 30 dias. O admin baixa uma cópia na hora em **Ajustes (engrenagem) → Backup → Baixar backup agora**. Guarde essas cópias fora do servidor. Para restaurar, abra o **Console** do app no EasyPanel:
 ```bash
 ls -1t /app/data/backups
 gunzip -c /app/data/backups/ARQUIVO.db.gz > /app/data/restaurar.db
@@ -112,7 +112,9 @@ O cookie de sessão é `secure`: a ferramenta **só funciona por HTTPS**. Por ht
 
 ## 3. Usuários
 
-**Pela ferramenta (recomendado):** entre como admin. A aba **0 · Clientes** mostra o bloco **Usuários**. Preencha nome, e-mail e uma senha provisória, e escolha o papel. A pessoa troca a senha no primeiro login. No mesmo bloco você pode desativar alguém (as sessões abertas caem na hora) ou definir uma nova senha provisória.
+**Pela ferramenta (recomendado):** entre como admin e abra **Ajustes (engrenagem, no cabeçalho) → Usuários**. Preencha nome, e-mail e uma senha provisória, e escolha o papel. A pessoa troca a senha no primeiro login. Na mesma janela você pode desativar alguém (as sessões abertas caem na hora) ou definir uma nova senha provisória.
+
+O menu **Ajustes** também tem **Alterar senha** (todos os usuários), **Backup** (admin) e **Sair**.
 
 - **Corretor** vê e edita só os próprios clientes.
 - **Admin** vê os clientes de todos e gerencia os usuários.
@@ -134,6 +136,25 @@ docker compose exec app node server/cli.js desativar email@dominio.com
 - Status: ao marcar **Vou avaliar**, a retomada fica para hoje + 2 dias. Ao marcar **Retomada**, para hoje + 5 dias. **Fechado** e **Perdido** saem das retomadas.
 - **Abrir mensagem** (nas retomadas) carrega o cliente e abre o WhatsApp no item certo: "Vou avaliar" para quem está em *Vou avaliar*, "Retomada" para quem está em *Retomada*.
 - **Excluir** apaga o cliente com todas as versões e o histórico (pedido de exclusão da LGPD). Não tem volta, exceto pelo backup.
+
+### Previdência (aba Dados)
+
+A previdência é calculada no próprio site, com as mesmas fórmulas da planilha "Gerador_estudo_previdencia" da Icatu. O PDF de previdência continua podendo ser importado, mas é opcional.
+
+- **Plano:** Atitude+Simples, Atitude ou Icatu Prev (Unique Prev). Cada um aplica as regras do Guia Rápido de Vendas (dez/2025):
+
+  | | Atitude+Simples | Atitude | Icatu Prev |
+  |---|---|---|---|
+  | Contribuição mínima | R$ 85/mês | R$ 100/mês | R$ 100/mês ou R$ 1.000 de aporte |
+  | DPS | não exige | exige | exige (se tiver cobertura) |
+  | Carência das coberturas | 12 meses | não há | não há |
+  | Mínimo por cobertura | R$ 15 | R$ 30 | — |
+
+- **Acumulação:** contribuição mensal, aporte inicial (opcional), rentabilidade (padrão 10% a.a.) e idade de aposentadoria (padrão 65). O site mostra a reserva e as rendas: vitalícia, temporária, vitalícia com prazo mínimo garantido e prazo certo (tábua BR-EMS2021, juros de 0%).
+- **Coberturas de risco:** começa com uma linha; o botão **+ Cobertura** adiciona outra. Há 8 coberturas: Renda Vitalícia por Invalidez, Pecúlio por Invalidez, Pecúlio por Morte e Pensão por Prazo Certo de 1, 5, 10, 15 e 20 anos. Contribuição = valor ÷ 1.000 × taxa da idade (18 a 64 anos). A Renda por Invalidez usa a taxa da planilha (a maior), em todos os planos.
+- A coluna **Conferência** avisa sobre valores fora dos limites do plano, mínimos, idade, exames exigidos acima de R$ 15 mil por mês e profissões fora da lista.
+- Com previdência, o estudo em PDF tem **4 páginas**: a página 4 traz "Sobre o seu plano" (DPS, carência, reajuste), as opções de renda, as regras e os avisos. O slide de previdência mostra o mesmo resumo do plano.
+- **Atualizar as tabelas:** as taxas e a tábua ficam em `public/prev-tabelas.js` (gerado da planilha); as regras e os limites de cada plano, em `public/prev.js`. Depois de mudar, rode `node server/test/prev.test.js`, que confere o cálculo com 7 estudos reais.
 
 ## 5. Backup e restauração
 
@@ -184,3 +205,5 @@ SESSION_SECRET=$(openssl rand -hex 48) ADMIN_EMAIL=admin@teste.local ADMIN_SENHA
   COOKIE_SECURE=false DB_PATH=/tmp/teste.db PORT=3001 node index.js &
 BASE=http://localhost:3001 DB_PATH=/tmp/teste.db node test/api.test.js
 ```
+
+Teste do cálculo da previdência (53 verificações, não precisa do servidor): `node server/test/prev.test.js`.

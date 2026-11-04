@@ -19,7 +19,18 @@
     <button data-tab="wa">4 · WhatsApp</button>
   </nav>
   <div class="who"><span id="whoName">Novo cliente</span><button class="ghost" id="btnReset">Novo cliente</button><button class="primary" id="btnSalvar" title="Salva uma nova versão do estudo deste cliente">Salvar</button></div>
-  <div class="user"><span id="userName"></span><button class="ghost" id="btnSair">Sair</button></div>
+  <div class="user"><span id="userName"></span>
+    <div class="gear-wrap">
+      <button class="ghost gear" id="btnGear" title="Ajustes" aria-label="Ajustes" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5c.1.2.4.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .2.2.4.5.4h4c.3 0 .5-.2.5-.4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg> Ajustes</button>
+      <div class="gear-menu" id="gearMenu" role="menu" hidden>
+        <button role="menuitem" data-gear="senha">Alterar senha</button>
+        <button role="menuitem" data-gear="usuarios" class="adm" hidden>Usuários</button>
+        <button role="menuitem" data-gear="backup" class="adm" hidden>Backup</button>
+        <hr>
+        <button role="menuitem" data-gear="sair" class="sair">Sair</button>
+      </div>
+    </div>
+  </div>
 </header>
 
 <main>
@@ -38,7 +49,6 @@
         </div>
         <div id="cliLista"></div>
       </div>
-      <div class="card" id="usuarios" hidden></div>
     </div>
   </section>
 
@@ -60,7 +70,7 @@
   <!-- ESTUDO -->
   <section class="view" id="v-estudo">
     <div class="toolbar">
-      <div><b>Estudo em PDF</b><span class="muted"> · 3 páginas A4 para enviar pelo WhatsApp depois da mensagem de resumo</span></div>
+      <div><b>Estudo em PDF</b><span class="muted"> · páginas A4 para enviar pelo WhatsApp depois da mensagem de resumo</span></div>
       <button class="primary" id="btnPdfEstudo">Baixar PDF do estudo</button>
     </div>
     <div class="pages-wrap"><div class="pages" id="pages"></div></div>
@@ -106,9 +116,16 @@
 <!-- área de captura (fora da tela) -->
 <div id="capture" class="capture"></div>
 <div id="toast" class="toast" hidden></div>
+<!-- janela dos ajustes (senha, usuários, backup) -->
+<div id="modal" class="modal" hidden><div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-head"><h3 id="modalTitle"></h3><button class="modal-x" id="modalX" aria-label="Fechar">×</button></div>
+  <div id="modalBody"></div>
+</div></div>
 
 <script src="lib/pdf.min.js"></script>
 <script src="parser.js"></script>
+<script src="prev-tabelas.js"></script>
+<script src="prev.js"></script>
 <script src="app.js"></script>
 <script src="clientes.js"></script>
 </body>

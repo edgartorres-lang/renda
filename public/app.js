@@ -45,14 +45,33 @@ const DEF = () => ({
   inss: { modo: "base", base: "", valor: "", teto: TETO_PADRAO, piso: PISO_PADRAO },
   sim: { meses: "6", reserva: "", validade: "10" },
   seg: { seguradora: "Icatu Seguros", produto: "Seguro Essencial", premio: "", cobs: [], proj: [], ditMeses: "12", franquia: "15", carencia: "60", lerCar: "", lerMax: "", limPct: "10", nome: "", idade: "" },
-  prev: { on: false, produto: "Atitude + Simples", aporte: "", risco: "", riscoNome: "Renda por Invalidez", riscoCap: "", taxa: "", anos: "", idadeApos: "", reserva: "", rendaVit: "", sexo: "", idade: "", nome: "" },
+  prev: { on: false, produto: "simples", contrib: "", inicial: "", taxa: "10", idadeApos: "65", cobs: [{ tipo: "rendaInv", valor: "" }], imp: { sexo: "", idade: "", nome: "", reserva: "", risco: "" } },
   deck: { cover: "auto", custom: "", off: { inss: true, faq: true } },
   wa: { opcao: "essencial", sel: "estudo" },
   imp: { seg: "", prev: "" },
   clienteId: null
 });
+/* previdência: estudos salvos antes do cálculo no site guardavam os valores do PDF; converte para os campos novos */
+const tipoCob = (nome) => {
+  const n = norm(nome), m = n.match(/prazo certo.*?(\d+)/);
+  if (m) return "pc" + m[1];
+  if (/peculio.*invalidez/.test(n)) return "pecInv";
+  if (/peculio.*morte/.test(n)) return "pecMorte";
+  return "rendaInv";
+};
+const prodKey = (s) => (/simples/i.test(s || "") ? "simples" : /unique|icatu prev/i.test(s || "") ? "icatuprev" : /atitude/i.test(s || "") ? "atitude" : "simples");
+function migrarPrev(o) {
+  const p = o && o.prev;
+  if (!p || Array.isArray(p.cobs)) return o;
+  o.prev = {
+    on: !!p.on, produto: prodKey(p.produto), contrib: p.aporte || "", inicial: "", taxa: p.taxa || "10", idadeApos: p.idadeApos || "65",
+    cobs: num(p.riscoCap) ? [{ tipo: tipoCob(p.riscoNome), valor: p.riscoCap }] : [],
+    imp: { sexo: p.sexo || "", idade: p.idade || "", nome: p.nome || "", reserva: p.reserva || "", risco: p.risco || "" }
+  };
+  return o;
+}
 let S = DEF();
-try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) S = deepMerge(DEF(), s); } catch (e) {}
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) S = deepMerge(DEF(), migrarPrev(s)); } catch (e) {}
 function deepMerge(a, b) { for (const k in b) { if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) && a[k] && typeof a[k] === "object") a[k] = deepMerge(a[k], b[k]); else a[k] = b[k]; } return a; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { try { const c = { ...S, deck: { ...S.deck, custom: "" } }; localStorage.setItem(KEY, JSON.stringify(c)); } catch (e2) {} } }
 const getPath = (p) => p.split(".").reduce((o, k) => (o == null ? o : o[k]), S);
@@ -66,7 +85,7 @@ function calc() {
   m.sexo = c.sexo || ""; m.ela = m.sexo === "F";
   const pk = PROF[c.prof] ? c.prof : "outra"; m.profKey = pk; m.P = PROF[pk];
   m.prof = pk === "outra" ? (c.profOutra || "").trim() : (m.ela ? m.P.F : m.P.M);
-  m.idade = Math.round(num(c.idade)) || Math.round(num(sg.idade)) || Math.round(num(pv.idade)) || 0;
+  m.idade = Math.round(num(c.idade)) || Math.round(num(sg.idade)) || Math.round(num(pv.imp.idade)) || 0;
   m.renda = num(c.renda);
   // INSS
   const teto = num(S.inss.teto) || 8475.55, piso = num(S.inss.piso) || 1621;
@@ -93,13 +112,20 @@ function calc() {
   m.ler = dit && /LER|DORT/i.test(dit.nome);
   m.lerCar = Math.round(num(sg.lerCar)) || 150; m.lerMax = Math.round(num(sg.lerMax)) || 90;
   m.limPct = num(sg.limPct) || 10;
-  // previdência
-  m.aporte = num(pv.aporte); m.risco = num(pv.risco);
-  m.prevOn = !!pv.on && m.aporte + m.risco > 0;
-  m.taxa = num(pv.taxa) || 10; m.anos = Math.round(num(pv.anos)) || 0;
-  m.idadeApos = Math.round(num(pv.idadeApos)) || (m.idade && m.anos ? m.idade + m.anos : 65);
-  m.reserva = num(pv.reserva) || (m.anos ? fv(m.aporte, m.taxa, m.anos * 12) : 0);
-  m.rendaVit = num(pv.rendaVit); m.riscoNome = pv.riscoNome || "Renda por Invalidez"; m.riscoCap = num(pv.riscoCap);
+  // previdência (calculada no site: prev.js)
+  const pr = window.Prev.calcular({
+    produto: pv.produto, contrib: num(pv.contrib), inicial: num(pv.inicial), taxa: num(pv.taxa) || 10, idadeApos: num(pv.idadeApos) || 65,
+    idade: m.idade, sexo: m.sexo || pv.imp.sexo, cobs: (pv.cobs || []).map((x) => ({ tipo: x.tipo, valor: num(x.valor) }))
+  });
+  m.pv = pr;
+  m.aporte = pr.contrib; m.inicial = pr.inicial; m.risco = pr.risco;
+  m.prevOn = !!pv.on && m.aporte + m.inicial + m.risco > 0;
+  m.taxa = pr.taxa; m.anos = pr.anos; m.idadeApos = pr.idadeApos; m.reserva = pr.reserva;
+  m.rendaVit = pr.rendas ? pr.rendas.vitalicia : 0;
+  m.prevCobs = pr.cobs.filter((x) => x.valor > 0 && x.premio != null);
+  const ri = m.prevCobs.find((x) => x.tipo === "rendaInv");
+  m.riscoNome = ri ? ri.nome : ""; m.riscoCap = ri ? ri.valor : 0;
+  m.prevProduto = pr.nomeProduto; m.prevInfo = pr.info;
   m.prevTot = m.aporte + m.risco;
   m.essencial = m.premio; m.completa = m.premio + (m.prevOn ? m.prevTot : 0);
   m.pct = (v) => (m.renda ? (v / m.renda * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%" : "");
@@ -145,10 +171,14 @@ function alertas(m) {
   if (!S.cli.prof) add("warn", "Escolha a profissão (define a carta e a foto da capa).");
   if (S.cli.prof === "outra" && !S.cli.profOutra) add("warn", "Digite o nome da profissão.");
   if (S.prev.on) {
-    if (S.prev.sexo && m.sexo && S.prev.sexo !== m.sexo) add("err", `O orçamento de previdência foi feito com sexo ${S.prev.sexo === "M" ? "masculino" : "feminino"}, mas o cliente é ${m.sexo === "M" ? "masculino" : "feminino"}. A renda por invalidez usa tábua por sexo: refaça o orçamento.`);
-    const i1 = Math.round(num(S.seg.idade)), i2 = Math.round(num(S.prev.idade));
+    const im = S.prev.imp || {};
+    m.pv.avisos.forEach((x) => add(x.t, "Previdência: " + x.x));
+    if (im.sexo && m.sexo && im.sexo !== m.sexo) add("warn", `O PDF de previdência importado foi feito com sexo ${im.sexo === "M" ? "masculino" : "feminino"}, mas o cliente é ${m.sexo === "M" ? "masculino" : "feminino"}. O site recalculou a renda com o sexo do cadastro.`);
+    const i1 = Math.round(num(S.seg.idade)), i2 = Math.round(num(im.idade));
     if (i1 && i2 && i1 !== i2) add("warn", `Idade diferente entre os orçamentos: seguro ${i1} anos, previdência ${i2} anos.`);
-    if (S.seg.nome && S.prev.nome && norm(S.seg.nome) !== norm(S.prev.nome)) add("err", `Os dois PDFs parecem ser de pessoas diferentes: "${S.seg.nome}" e "${S.prev.nome}".`);
+    if (S.seg.nome && im.nome && norm(S.seg.nome) !== norm(im.nome)) add("err", `Os dois PDFs parecem ser de pessoas diferentes: "${S.seg.nome}" e "${im.nome}".`);
+    if (num(im.reserva) && m.reserva && Math.abs(num(im.reserva) - m.reserva) > 1) add("warn", `A reserva do PDF importado (${brl(num(im.reserva))}) é diferente da calculada pelo site (${brl(m.reserva)}). Confira idade, contribuição e rentabilidade.`);
+    if (S.cli.prof === "outra" && m.prevCobs.length) add("info", "Profissão fora da lista: confira na Icatu se ela é aceita para as coberturas de morte e invalidez.");
     if (m.taxa >= 8) add("info", `A projeção da previdência usa ${fmt(m.taxa)}% ao ano (rentabilidade real estimada pela Icatu). É uma estimativa, não garantia: o estudo informa isso nos avisos.`);
   }
   if (m.ler) add("info", `DIT com LER/DORT/LTC: para essas lesões, carência de ${m.lerCar} dias e pagamento por até ${m.lerMax} dias. O estudo explica.`);
@@ -170,7 +200,7 @@ function renderForm() {
     <h3>Importar orçamentos da Icatu</h3>
     <div class="drops">
       <label class="drop ${S.imp.seg ? "ok" : ""}">PDF do seguro de vida<small>${S.imp.seg ? esc(S.imp.seg) : "Seguro Essencial · \"Sua simulação\""}</small><input type="file" accept="application/pdf" data-imp="seguro" hidden></label>
-      <label class="drop ${S.imp.prev ? "ok" : ""}">PDF da previdência<small>${S.imp.prev ? esc(S.imp.prev) : "Atitude + Simples · opcional"}</small><input type="file" accept="application/pdf" data-imp="prev" hidden></label>
+      <label class="drop ${S.imp.prev ? "ok" : ""}">PDF da previdência<small>${S.imp.prev ? esc(S.imp.prev) : "Opcional · a previdência agora é calculada no site"}</small><input type="file" accept="application/pdf" data-imp="prev" hidden></label>
     </div>
     <div class="status" id="impStatus">Você também pode arrastar os dois PDFs para esta página.</div>
   </div>
@@ -217,23 +247,61 @@ function renderForm() {
     <table class="cobs"><thead><tr><th>Cobertura</th><th>Capital (R$)</th><th>Prêmio/mês</th><th></th></tr></thead><tbody>${cobRows || `<tr><td colspan="4" class="muted small" style="padding:8px">Nenhuma cobertura. Importe o PDF ou adicione.</td></tr>`}</tbody></table>
     <div class="sumline"><button id="addCob">+ Adicionar cobertura</button><span>Soma das coberturas: <b id="somaCob">${brl(m.soma)}</b></span></div>
   </div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Previdência</h3>
-    <label class="switch"><input type="checkbox" data-k="prev.on" ${S.prev.on ? "checked" : ""}> Incluir no plano Completo</label></div>
-    <div class="fgrid" style="margin-top:12px;${S.prev.on ? "" : "opacity:.5"}">
-      ${fld("prev.produto", "Plano")}
-      ${fld("prev.aporte", "Contribuição · acumulação (R$)", { num: 1 })}
-      ${fld("prev.riscoNome", "Cobertura de risco")}
-      ${fld("prev.riscoCap", "Renda/capital da cobertura (R$)", { num: 1 })}
-      ${fld("prev.risco", "Contribuição · risco (R$)", { num: 1 })}
-      ${fld("prev.taxa", "Rentabilidade da projeção (% a.a.)", { num: 1 })}
+  ${prevCard(m)}`;
+  bindForm();
+}
+
+/* ---------- bloco da previdência ---------- */
+const PROD_OPTS = [["simples", "Atitude+Simples"], ["atitude", "Atitude"], ["icatuprev", "Icatu Prev (Unique Prev)"]];
+const PROD_HINT = {
+  simples: "Acumulação + proteção. Mínimo de R$ 85/mês. Sem DPS, carência de 12 meses nas coberturas.",
+  atitude: "Acumulação + proteção para valores maiores. Mínimo de R$ 100/mês. Com DPS, sem carência.",
+  icatuprev: "Foco em acumulação: R$ 100/mês ou R$ 1.000 de aporte. Coberturas opcionais, com DPS."
+};
+function prevCard(m) {
+  const pv = S.prev, P = window.Prev, lim = P.PRODUTOS[pv.produto] ? P.PRODUTOS[pv.produto].limites : {};
+  const rows = (pv.cobs || []).map((c, i) => {
+    const opts = P.ORDEM.map((k) => `<option value="${k}"${c.tipo === k ? " selected" : ""}>${P.COBS[k].nome}${lim[k] ? "" : " (não disponível neste plano)"}</option>`).join("");
+    const l = lim[c.tipo];
+    return `<tr><td><select data-pcob="${i}" data-f="tipo">${opts}</select>${l ? `<div class="hint">De ${brl0(l[0])} a ${brl0(l[1])}${P.COBS[c.tipo].mensal ? " por mês" : ""}</div>` : ""}</td>
+      <td style="width:150px"><input data-pcob="${i}" data-f="valor" value="${esc(c.valor)}" inputmode="decimal" placeholder="${P.COBS[c.tipo] && P.COBS[c.tipo].mensal ? "por mês" : "valor único"}"></td>
+      <td class="n" style="width:110px" id="ppre${i}"></td><td class="x"><button data-delpcob="${i}" title="Remover">×</button></td></tr>`;
+  }).join("");
+  return `<div class="card" id="prevCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0">Previdência</h3>
+    <label class="switch"><input type="checkbox" data-k="prev.on" ${pv.on ? "checked" : ""}> Incluir no plano Completo</label></div>
+    <div style="${pv.on ? "" : "opacity:.5"}">
+    <div class="fgrid" style="margin-top:12px">
+      ${fld("prev.produto", "Plano", { select: PROD_OPTS, hint: PROD_HINT[pv.produto] || "" })}
+    </div>
+    <h4 class="sub-h">Acumulação</h4>
+    <div class="fgrid">
+      ${fld("prev.contrib", "Contribuição mensal (R$)", { num: 1, ph: pv.produto === "simples" ? "85,00" : "100,00" })}
+      ${fld("prev.inicial", "Aporte ou portabilidade inicial (R$)", { num: 1, ph: "opcional" })}
+      ${fld("prev.taxa", "Rentabilidade estimada (% a.a.)", { num: 1 })}
       ${fld("prev.idadeApos", "Idade de aposentadoria", { num: 1 })}
-      ${fld("prev.reserva", "Reserva estimada (R$)", { num: 1 })}
-      ${fld("prev.rendaVit", "Renda vitalícia estimada (R$/mês)", { num: 1 })}
-      ${fld("prev.sexo", "Sexo no orçamento", { select: [["", "—"], ["F", "Feminino"], ["M", "Masculino"]] })}
+    </div>
+    <h4 class="sub-h">Coberturas de risco</h4>
+    <table class="cobs"><thead><tr><th>Cobertura</th><th>Valor (R$)</th><th class="n">Contribuição</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="4" class="muted small" style="padding:8px">Sem cobertura de risco${pv.produto === "icatuprev" ? " (só acumulação)" : ""}.</td></tr>`}</tbody></table>
+    <div class="sumline"><button id="addPcob" title="Adicionar cobertura de risco">+ Cobertura</button><span id="prevTotLine"></span></div>
+    <div class="prev-out" id="prevOut"></div>
     </div>
   </div>`;
-  bindForm();
+}
+function prevOutRender(m) {
+  m = m || calc();
+  const pr = m.pv, idade = m.idade;
+  (pr.cobs || []).forEach((c, i) => { const el = $("#ppre" + i); if (el) el.textContent = c.premio != null ? brl(c.premio) : (idade ? "—" : "informe a idade"); });
+  const tl = $("#prevTotLine"); if (tl) tl.innerHTML = `Acumulação <b>${brl(pr.contrib)}</b> + risco <b>${brl(pr.risco)}</b> = <b>${brl(pr.total)}</b>/mês`;
+  const out = $("#prevOut"); if (!out) return;
+  if (!pr.reserva) { out.innerHTML = `<div class="muted small">${idade ? "Informe a contribuição para ver a reserva e as rendas." : "Informe a idade do cliente para calcular."}</div>`; return; }
+  const r = pr.rendas, lst = (arr) => arr.map((x) => `<span>${x.t} anos: <b>${brl0(x.v)}</b></span>`).join("");
+  out.innerHTML = `<div class="po-top"><div><span class="k">Reserva estimada aos ${pr.idadeApos}</span><b>${brl0(pr.reserva)}</b><small>${pr.anos} anos de contribuição a ${fmt(pr.taxa, true)}% a.a.</small></div>
+      <div><span class="k">Renda vitalícia</span><b>${brl0(r.vitalicia)}/mês</b><small>tábua BR-EMS2021 (${m.sexo === "F" ? "feminina" : m.sexo === "M" ? "masculina" : "sexo não informado"}), juros 0%</small></div></div>
+    <div class="po-l"><i>Renda temporária</i>${lst(r.temporaria)}</div>
+    <div class="po-l"><i>Vitalícia c/ prazo mínimo garantido</i>${lst(r.pmg)}</div>
+    <div class="po-l"><i>Renda por prazo certo</i>${lst(r.certo)}</div>`;
 }
 function bindForm() {
   const form = $("#form");
@@ -243,9 +311,24 @@ function bindForm() {
       const k = el.dataset.k; const v = el.type === "checkbox" ? el.checked : el.value;
       setPath(k, v); save();
       if (el.tagName === "SELECT" || el.type === "checkbox") renderForm();
+      else prevOutRender();
       refresh();
     });
   });
+  // previdência: coberturas de risco
+  form.querySelectorAll("[data-pcob]").forEach((el) => el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
+    S.prev.cobs[+el.dataset.pcob][el.dataset.f] = el.value; save();
+    if (el.tagName === "SELECT") renderForm(); else prevOutRender();
+    refresh();
+  }));
+  form.querySelectorAll("[data-delpcob]").forEach((b) => b.addEventListener("click", () => { S.prev.cobs.splice(+b.dataset.delpcob, 1); save(); renderForm(); refresh(); }));
+  $("#addPcob").addEventListener("click", () => {
+    const usados = S.prev.cobs.map((c) => c.tipo), lim = (window.Prev.PRODUTOS[S.prev.produto] || {}).limites || {};
+    const livre = window.Prev.ORDEM.find((k) => lim[k] && !usados.includes(k)) || window.Prev.ORDEM.find((k) => !usados.includes(k));
+    if (!livre) { toast("Todas as coberturas já foram incluídas."); return; }
+    S.prev.cobs.push({ tipo: livre, valor: "" }); save(); renderForm(); refresh();
+  });
+  prevOutRender();
   form.querySelectorAll("[data-cob]").forEach((el) => el.addEventListener("input", () => {
     S.seg.cobs[+el.dataset.cob][el.dataset.f] = el.value; save(); $("#somaCob").textContent = brl(calc().soma); refresh();
   }));
@@ -274,14 +357,16 @@ async function importPdf(file) {
       if (!S.cli.idade && r.idade) S.cli.idade = String(r.idade);
       S.imp.seg = file.name + " · " + r.coberturas.length + " coberturas";
     } else {
+      // o PDF da previdência vira os campos do bloco; o site recalcula tudo
+      const pm = lines.join(" ").match(/O (Atitude ?\+ ?Simples|Atitude|Unique Prev|Icatu Prev) é um produto/i);
       Object.assign(S.prev, {
-        on: true, produto: r.produto, aporte: String(r.aporte || ""), risco: String(r.risco || ""), taxa: String(r.taxa || ""), anos: String(r.anos || ""),
-        idadeApos: String(r.idadeApos || ""), reserva: String(r.reserva || ""), rendaVit: String(r.rendaVitalicia || ""), sexo: r.sexo || "", idade: String(r.idade || ""), nome: r.nome || ""
+        on: true, produto: prodKey(pm ? pm[1] : r.produto), contrib: String(r.aporte || ""), inicial: "", taxa: String(r.taxa || "10"), idadeApos: String(r.idadeApos || "65"),
+        cobs: (r.riscos || []).filter((x) => x.capital > 0).map((x) => ({ tipo: tipoCob(x.nome), valor: String(x.capital) })),
+        imp: { sexo: r.sexo || "", idade: String(r.idade || ""), nome: r.nome || "", reserva: String(r.reserva || ""), risco: String(r.risco || "") }
       });
-      const rr = (r.riscos || []).find((x) => /invalidez/i.test(x.nome)) || (r.riscos || [])[0];
-      if (rr) { S.prev.riscoNome = rr.nome; S.prev.riscoCap = String(rr.capital || ""); }
       if (r.nome && (!S.cli.nome || norm(S.cli.nome) === norm(r.nome))) S.cli.nome = r.nome; // nome da previdência vem com acentos
       if (!S.cli.idade && r.idade) S.cli.idade = String(r.idade);
+      if (!S.cli.sexo && r.sexo) S.cli.sexo = r.sexo;
       S.imp.prev = file.name;
     }
     save(); renderForm(); refresh();
@@ -312,7 +397,7 @@ function renderResumo(m) {
 
 /* ====================== ESTUDO ====================== */
 function pgHead(m) { return `<div class="bar"></div><div class="hd"><img src="img/logo.png" alt="Setor Norte Seguros"><span>${esc(m.hojeLonga)}</span></div>`; }
-function pgFoot(n) { return `<div class="ft"><span><b>Torres Norte Corretora de Seguros Ltda</b> · CNPJ 11.903.619/0001-22 · SUSEP 202087923 · www.setornorteseguros.com.br</span><span>${n}/3</span></div>`; }
+function pgFoot(n, tot) { return `<div class="ft"><span><b>Torres Norte Corretora de Seguros Ltda</b> · CNPJ 11.903.619/0001-22 · SUSEP 202087923 · www.setornorteseguros.com.br</span><span>${n}/${tot || 3}</span></div>`; }
 function carta(m) {
   const P = m.P, o = m.ela ? "a" : "o";
   const p2 = m.inss != null
@@ -350,7 +435,7 @@ function page1(m) {
   </div>
   <div class="sign"><b>${CORRETOR.nome}</b><span>Corretor de seguros · Setor Norte Seguros · ${CORRETOR.email}</span></div>
   <img class="wm" src="img/sym.png" alt="">
-  ${pgFoot(1)}</div>`;
+  ${pgFoot(1, totPag(m))}</div>`;
 }
 function simBars(m, big) {
   const max = Math.max(m.renda, m.rendaCom, 1), W = big ? 62 : 74;
@@ -396,11 +481,11 @@ function page2(m) {
     ${m.ipa ? `<div class="cardx b"><span class="k">Invalidez por acidente</span><span class="v">${brl0(m.ipa)}</span><span class="s">total ou proporcional ao grau da invalidez</span></div>` : ""}
     ${m.prevOn && m.riscoCap ? `<div class="cardx b"><span class="k">${esc(m.riscoNome)}</span><span class="v">${brl0(m.riscoCap)}/mês</span><span class="s">por toda a vida, por acidente ou doença (plano Completo)</span></div>` : ""}
   </div>
-  ${pgFoot(2)}</div>`;
+  ${pgFoot(2, totPag(m))}</div>`;
 }
 function optItems(m, kind) {
   const base = [`${brl0(m.dit)}/mês se precisar parar`, m.dg ? `${short(m.dg)} no diagnóstico de doença grave` : "", m.ipa ? `${short(m.ipa)} por invalidez por acidente` : "", m.morte ? `${short(m.morte)} para a família` : ""].filter(Boolean);
-  if (kind === "completa") return [`Tudo da Essencial`, m.riscoCap ? `${brl0(m.riscoCap)}/mês vitalício por invalidez` : "", m.aporte ? `${brl(m.aporte)}/mês para a sua reserva (${short(m.reserva)} aos ${m.idadeApos})` : ""].filter(Boolean);
+  if (kind === "completa") return [`Tudo da Essencial`, ...m.prevCobs.map((c) => c.curto), m.aporte || m.inicial ? `${m.aporte ? brl(m.aporte) + "/mês para a sua reserva" : "Reserva"} (${short(m.reserva)} aos ${m.idadeApos})` : ""].filter(Boolean);
   return base;
 }
 function page3(m) {
@@ -409,9 +494,9 @@ function page3(m) {
     if (c === m.ditCob) d = `Paga por até ${m.ditMeses} meses. Acidente: desde o 1º dia. Doença: a partir do ${m.franquia + 1}º dia.` + (m.ler ? ` LER/DORT/LTC: carência de ${m.lerCar} dias, paga por até ${m.lerMax} dias.` : "");
     return `<tr><td>${esc(c.nome)}${d ? `<small>${d}</small>` : ""}</td><td class="n">${c.capital ? brl0(c.capital) + (c === m.ditCob ? "/mês" : "") : "—"}</td><td class="n">${c.premio ? brl(c.premio) : "incluído"}</td></tr>`;
   }).join("");
-  const prevRows = m.prevOn ? `<tr class="grp"><td colspan="2">${esc(S.prev.produto || "Previdência")} · previdência com proteção</td><td class="n">${brl(m.prevTot)}</td></tr>
-    ${m.risco ? `<tr><td>${esc(m.riscoNome)}<small>Renda mensal vitalícia em caso de invalidez total e permanente.</small></td><td class="n">${m.riscoCap ? brl0(m.riscoCap) + "/mês" : "—"}</td><td class="n">${brl(m.risco)}</td></tr>` : ""}
-    ${m.aporte ? `<tr><td>Acumulação de reserva<small>Reserva no seu nome, resgatável conforme o regulamento do plano.</small></td><td class="n">—</td><td class="n">${brl(m.aporte)}</td></tr>` : ""}` : "";
+  const prevRows = m.prevOn ? `<tr class="grp"><td colspan="2">Icatu Seguros · ${esc(m.prevProduto)} · previdência${m.prevCobs.length ? " com proteção" : ""}</td><td class="n">${brl(m.prevTot)}</td></tr>
+    ${m.prevCobs.map((c) => `<tr><td>${esc(c.nome)}<small>${esc(c.desc)}</small></td><td class="n">${c.mensal ? brl0(c.valor) + "/mês" : brl0(c.valor)}</td><td class="n">${brl(c.premio)}</td></tr>`).join("")}
+    ${m.aporte || m.inicial ? `<tr><td>Acumulação de reserva<small>Reserva no seu nome, resgatável conforme o regulamento do plano.${m.inicial ? ` Inclui aporte inicial de ${brl0(m.inicial)}.` : ""}</small></td><td class="n">—</td><td class="n">${m.aporte ? brl(m.aporte) : "—"}</td></tr>` : ""}` : "";
   const opt = (kind, hi) => {
     const v = kind === "completa" ? m.completa : m.essencial;
     return `<div class="opt${hi ? " hi" : ""}">${hi ? `<span class="tag">Recomendado</span>` : ""}<div class="on">${kind === "completa" ? "Completa · seguro + previdência" : "Essencial · seguro de vida"}</div>
@@ -433,7 +518,13 @@ function page3(m) {
     ${m.reserva ? `<div><span class="k">Reserva estimada aos ${m.idadeApos} anos</span><span class="v">${brl0(m.reserva)}</span></div>` : ""}
     ${m.rendaVit ? `<div><span class="k">Ou renda vitalícia estimada</span><span class="v">${brl0(m.rendaVit)}/mês</span></div>` : ""}
     <div><span class="k">Rentabilidade usada</span><span class="v" style="font-size:16px">${fmt(m.taxa)}% ao ano</span><span class="s">estimativa da seguradora, sem garantia</span></div></div>` : ""}
-  <h2>Regras importantes</h2>
+  ${m.prevOn ? `<p class="l" style="margin-top:14px;font-size:12px;color:#5E6B76">Na página 4: o que vale para o seu plano de previdência, as opções de renda na aposentadoria, as regras e os avisos.</p>` : detalhes(m)}
+  ${pgFoot(3, totPag(m))}</div>`;
+}
+const totPag = (m) => (m.prevOn ? 4 : 3);
+/* regras, avisos e assinatura: no fim da página 3, ou na página 4 quando há previdência */
+function detalhes(m) {
+  return `<h2>Regras importantes</h2>
   <ul class="rules">
     <li>Renda por afastamento: por acidente, desde o 1º dia; por doença, a partir do ${m.franquia + 1}º dia de afastamento, com carência de ${m.carencia} dias contados da contratação.</li>
     ${m.ler ? `<li>Lesões por esforço repetitivo (LER, DORT e LTC): carência de ${m.lerCar} dias e pagamento por até ${m.lerMax} dias.</li>` : ""}
@@ -446,10 +537,30 @@ function page3(m) {
     ${m.prevOn ? `<p>A rentabilidade da projeção (${fmt(m.taxa)}% a.a., informada pela seguradora como rentabilidade real estimada) não é garantia de resultado. Fundos de previdência não contam com garantia do FGC. O resgate está sujeito a imposto de renda conforme o regime tributário.</p>` : ""}
     <p>Consulte a situação cadastral do corretor em www.susep.gov.br pelo registro SUSEP 202087923. <b>Estudo válido até ${m.validade}.</b></p>
   </div>
-  <div class="sign" style="margin-top:12px"><b>${CORRETOR.nome}</b><span>Corretor de seguros · ${CORRETOR.tel} · ${CORRETOR.email}</span></div>
-  ${pgFoot(3)}</div>`;
+  <div class="sign" style="margin-top:12px"><b>${CORRETOR.nome}</b><span>Corretor de seguros · ${CORRETOR.tel} · ${CORRETOR.email}</span></div>`;
 }
-function studyPages(m) { return [page1(m), page2(m), page3(m)]; }
+function page4(m) {
+  const r = m.pv.rendas, info = m.prevInfo.filter((t) => m.prevCobs.length || !/coberturas/i.test(t));
+  const linha = (nome, d, arr) => `<tr><td>${nome}<small>${d}</small></td>${arr.map((x) => `<td class="n">${brl0(x.v)}</td>`).join("")}</tr>`;
+  const rendas = r ? `<h2>Opções de renda na aposentadoria</h2>
+    <div class="sub" style="margin-bottom:6px">Com a reserva estimada de ${brl0(m.reserva)} aos ${m.idadeApos} anos, você escolhe como receber:</div>
+    <div class="cells" style="margin-bottom:8px"><div class="cell"><span class="k">Renda vitalícia</span><span class="v">${brl0(r.vitalicia)}/mês</span><span class="s">por toda a vida</span></div>
+      <div class="cell"><span class="k">Ou a reserva de uma vez</span><span class="v">${brl0(m.reserva)}</span><span class="s">resgate, conforme o regulamento</span></div></div>
+    <table class="t"><thead><tr><th>Outras formas de receber (por mês)</th>${r.temporaria.map((x) => `<th class="n">${x.t} anos</th>`).join("")}</tr></thead><tbody>
+      ${linha("Renda temporária", "paga pelo prazo escolhido, enquanto você estiver vivo", r.temporaria)}
+      ${linha("Vitalícia com prazo mínimo garantido", "por toda a vida; se você faltar antes do prazo, os beneficiários recebem até o fim dele", r.pmg)}
+      ${linha("Renda por prazo certo", "paga pelo prazo escolhido, a você ou aos beneficiários", r.certo)}
+    </tbody></table>
+    <p class="l" style="font-size:10.5px;color:#5E6B76;margin-top:6px">Estimativas com a tábua BR-EMS2021 e juros de 0% a.a. após a concessão do benefício. O valor efetivo é calculado no momento do pedido, com a reserva acumulada e as condições do plano contratado. Valores brutos, sem o desconto do Imposto de Renda.</p>` : "";
+  return `<div class="pg">${pgHead(m)}
+  <h1>Detalhes do seu plano</h1>
+  <div class="sub">${esc(m.prevProduto)} · Icatu Seguros</div>
+  <div class="planinfo"><b>Sobre o seu plano · ${esc(m.prevProduto)}</b><ul>${info.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>
+  ${rendas}
+  ${detalhes(m)}
+  ${pgFoot(4, 4)}</div>`;
+}
+function studyPages(m) { return m.prevOn ? [page1(m), page2(m), page3(m), page4(m)] : [page1(m), page2(m), page3(m)]; }
 
 /* ====================== APRESENTAÇÃO ====================== */
 const SLIDES = [
@@ -536,17 +647,19 @@ function slideHtml(id, m) {
     }
     case "prev": {
       const ys = []; const A = m.anos || Math.max(5, m.idadeApos - m.idade); const step = A <= 10 ? 2 : 5; for (let y = step; y < A; y += step) ys.push(y); ys.push(A);
-      const bars = ys.slice(-5).map((y) => ({ y, v: fv(m.aporte, m.taxa, y * 12), inv: m.aporte * 12 * y }));
+      const bars = ys.slice(-5).map((y) => ({ y, v: window.Prev.reservaFV(m.aporte, m.inicial, m.taxa, y * 12), inv: m.aporte * 12 * y + m.inicial }));
       const max = Math.max(...bars.map((b) => b.v), 1);
-      return sl("", `<div class="pad"><div class="ey">Previdência</div><div class="t2">${brl(m.aporte)} por mês viram ${short(m.reserva)} aos ${m.idadeApos} anos</div>
+      const protecao = m.prevCobs.length ? `<div class="box" style="background:#EAF4E3;padding:26px 32px"><div class="k">Proteção incluída</div>${m.prevCobs.map((c) => `<div style="font-family:Montserrat,sans-serif;font-weight:800;font-size:${m.prevCobs.length > 2 ? 28 : 34}px;color:#3F7F2E;margin-top:10px;line-height:1.2">${esc(c.curto)}</div>`).join("")}<div style="font-size:22px;color:#3C4B57;margin-top:10px">por acidente ou doença</div></div>` : "";
+      const info = m.prevInfo.filter((t) => m.prevCobs.length ? !/^Início de vigência|^Acumulação em fundo|^Plano de acumulação/.test(t) : !/coberturas|DPS|carência|Aceitação/i.test(t) && !/^Início/.test(t));
+      return sl("", `<div class="pad"><div class="ey">Previdência · ${esc(m.prevProduto)}</div><div class="t2">${m.aporte ? brl(m.aporte) + " por mês viram" : "Sua reserva chega a"} ${short(m.reserva)} aos ${m.idadeApos} anos</div>
       <div style="display:flex;gap:60px;flex:1;margin-top:40px">
         <div style="flex:1.4;display:flex;flex-direction:column"><div style="flex:1;display:flex;align-items:flex-end;gap:36px;border-bottom:3px solid #E3EAF0">${bars.map((b) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:10px;height:100%"><b style="font-family:Montserrat,sans-serif;font-size:28px;color:#0C6594;white-space:nowrap">${short(b.v)}</b><div style="width:100%;height:${(b.v / max * 82).toFixed(1)}%;background:#0C6594;border-radius:12px 12px 0 0;display:flex;align-items:flex-end"><div style="width:100%;height:${(b.inv / b.v * 100).toFixed(1)}%;background:#9DC0D8;border-radius:0"></div></div></div>`).join("")}</div>
         <div style="display:flex;gap:36px;padding-top:10px">${bars.map((b) => `<b style="flex:1;text-align:center;font-family:Montserrat,sans-serif;font-size:26px">${b.y} anos</b>`).join("")}</div>
         <div style="font-size:22px;color:#5B6B78;margin-top:10px">Azul-claro: total aportado. Projeção com ${fmt(m.taxa)}% ao ano, estimativa da seguradora, sem garantia.</div></div>
         <div style="flex:1;display:flex;flex-direction:column;gap:24px">
-          ${m.rendaVit ? `<div class="box" style="background:#EEF4F8"><div class="k">Ou renda vitalícia estimada</div><div class="bign" style="font-size:64px;color:#0C6594">${brl0(m.rendaVit)}/mês</div></div>` : ""}
-          ${m.riscoCap ? `<div class="box" style="background:#EAF4E3"><div class="k">${esc(m.riscoNome)}</div><div class="bign" style="font-size:64px;color:#3F7F2E">${brl0(m.riscoCap)}/mês</div><div style="font-size:26px;color:#3C4B57;margin-top:8px">por toda a vida, se não puder mais trabalhar, por acidente ou doença</div></div>` : ""}
-          <div style="font-size:26px;color:#3C4B57;line-height:1.4">A reserva é sua: se você nunca usar o seguro, o dinheiro da previdência continua no seu nome.</div>
+          ${m.rendaVit ? `<div class="box" style="background:#EEF4F8;padding:26px 32px"><div class="k">Ou renda vitalícia estimada</div><div class="bign" style="font-size:58px;color:#0C6594">${brl0(m.rendaVit)}/mês</div></div>` : ""}
+          ${protecao}
+          <div style="font-size:22px;color:#3C4B57;line-height:1.35;border-left:6px solid #5DB84E;padding-left:18px"><b style="font-family:Montserrat,sans-serif;font-size:24px;color:#0D3A53">Sobre o ${esc(m.prevProduto)}</b>${info.map((t) => `<div style="margin-top:6px">${esc(t)}</div>`).join("")}</div>
         </div></div></div>`);
     }
     case "faq": return sl("", `<div class="pad"><div class="t2" style="margin-top:0">Perguntas frequentes</div><div class="faq" style="margin-top:60px">
@@ -614,9 +727,10 @@ function waTexts(m) {
   const bens = [`✅ ${brl0(m.dit)} por mês se precisar se afastar (acidente desde o 1º dia; doença a partir do ${m.franquia + 1}º dia)`];
   if (m.dg) bens.push(`✅ ${brl0(m.dg)} de uma vez no diagnóstico de doença grave, para usar como quiser, inclusive no tratamento`);
   if (m.ipa) bens.push(`✅ ${brl0(m.ipa)} em caso de invalidez por acidente`);
-  if (foco === "completa" && m.riscoCap) bens.push(`✅ ${brl0(m.riscoCap)} por mês, por toda a vida, se não puder mais trabalhar`);
+  if (foco === "completa") m.prevCobs.forEach((c) => bens.push(c.tipo === "rendaInv" ? `✅ ${brl0(c.valor)} por mês, por toda a vida, se não puder mais trabalhar` : `✅ ${c.curto}`));
   if (foco === "completa" && m.aporte) bens.push(`✅ ${brl(m.aporte)} por mês para a sua reserva de previdência`);
-  const outra = m.prevOn ? (foco === "completa" ? `Se preferir começar só pelo seguro, a opção Essencial fica em ${brl(m.essencial)} por mês.` : `Se quiser incluir a previdência (reserva + renda vitalícia por invalidez), o plano Completo fica em ${brl(m.completa)} por mês.`) : "";
+  const prevDesc = m.prevCobs.length ? (m.prevCobs.length === 1 && m.riscoCap ? "reserva + renda vitalícia por invalidez" : "reserva + coberturas de proteção") : "reserva para a aposentadoria";
+  const outra = m.prevOn ? (foco === "completa" ? `Se preferir começar só pelo seguro, a opção Essencial fica em ${brl(m.essencial)} por mês.` : `Se quiser incluir a previdência (${prevDesc}), o plano Completo fica em ${brl(m.completa)} por mês.`) : "";
   const wa1 = [
     `${n}, preparei o seu estudo com os valores oficiais da ${m.seguradora}.`, "",
     risco, "",
@@ -770,7 +884,10 @@ $("#btnReset").addEventListener("click", () => {
   if (bar.dataset.armed) { const keep = { custom: S.deck.custom }; S = DEF(); S.deck.custom = keep.custom; save(); renderForm(); showTab("dados"); bar.textContent = "Novo cliente"; delete bar.dataset.armed; toast("Dados limpos"); return; }
   bar.dataset.armed = 1; bar.textContent = "Confirmar limpeza?"; setTimeout(() => { bar.textContent = "Novo cliente"; delete bar.dataset.armed; }, 3000);
 });
-let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (curTab !== "dados") refresh(); if (!$("#present").hidden) drawPresent(); }, 150); });
+/* altura do cabeçalho (com as abas) para os painéis fixos */
+const hdr = () => document.documentElement.style.setProperty("--hdr", ($("header.top").offsetHeight + 14) + "px");
+hdr();
+let rz; window.addEventListener("resize", () => { hdr(); clearTimeout(rz); rz = setTimeout(() => { if (curTab !== "dados") refresh(); if (!$("#present").hidden) drawPresent(); }, 150); });
 
 /* ---------- modo apresentação ---------- */
 let pIdx = 0, pList = [];
@@ -857,5 +974,5 @@ $("#btnPptx").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerand
 renderForm();
 const h = (location.hash || "").replace("#", "");
 showTab(["clientes", "dados", "estudo", "deck", "wa"].includes(h) ? h : "clientes");
-window.__app = { get S() { return S; }, KEY, calc, save, showTab, toast, importPdf, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), o); save(); renderForm(); refresh(); } };
+window.__app = { get S() { return S; }, KEY, calc, save, showTab, toast, importPdf, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
 })();
