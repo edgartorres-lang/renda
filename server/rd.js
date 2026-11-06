@@ -61,7 +61,19 @@ function conversoes(lead) {
   };
   pega(lead.last_conversion); pega(lead.first_conversion);
   for (const k of ["conversion_identifier", "last_conversion_identifier", "first_conversion_identifier", "traffic_source", "traffic_medium", "traffic_campaign", "utm_source", "utm_medium", "utm_campaign"]) if (typeof lead[k] === "string" && lead[k]) out.push(lead[k]);
-  return [...new Set(out.map((s) => s.trim()).filter(Boolean))];
+  return [...new Set(out.map((s) => s.trim()).filter((s) => s && !/^\(?(unknown|other|none|null)\)?$/i.test(s)))];
+}
+
+/* o RD costuma mandar só o primeiro nome em "name"; o nome completo vem no campo Nome das conversões */
+function nomeCompleto(lead, cs) {
+  const base = txt(lead.name || lead.nome || achar(cs, /^nome( completo)?$/), 200);
+  const primeiro = norm(base).split(" ")[0];
+  let melhor = base;
+  for (const c of [lead.first_conversion, lead.last_conversion]) {
+    const n = txt(c && c.content && (c.content.Nome || c.content.nome || c.content.name), 200);
+    if (n.length > melhor.length && (!primeiro || norm(n).split(" ")[0] === primeiro)) melhor = n;
+  }
+  return melhor;
 }
 
 /* origem pelo texto das tags e das conversões. "Agendou" é guardado à parte: o lead pode ter vindo do Instagram E agendado. */
@@ -81,7 +93,7 @@ function lerLead(lead) {
   if (!lead || typeof lead !== "object") return null;
   const cs = campos(lead);
   const email = txt(lead.email || achar(cs, /^e ?mail$/), 200).toLowerCase();
-  const nome = txt(lead.name || lead.nome || achar(cs, /^nome( completo)?$/), 200);
+  const nome = nomeCompleto(lead, cs);
   if (!email && !nome) return null;
   const tags = (Array.isArray(lead.tags) ? lead.tags : String(lead.tags || "").split(",")).map((x) => txt(x, 80)).filter(Boolean);
   const conv = conversoes(lead);

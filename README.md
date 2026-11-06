@@ -223,4 +223,4 @@ BASE=http://localhost:3001 DB_PATH=/tmp/teste.db node test/api.test.js
 
 Teste do cálculo da previdência (53 verificações, não precisa do servidor): `node server/test/prev.test.js`.
 
-Teste da leitura do webhook do RD (13 verificações, não precisa do servidor): `node server/test/rd.test.js`.
+Teste da leitura do webhook do RD (15 verificações, não precisa do servidor): `node server/test/rd.test.js`.

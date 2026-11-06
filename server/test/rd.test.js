@@ -41,6 +41,22 @@ t("formato novo (cf_ no mesmo nível)", () => {
   assert.strictEqual(L.profissao, "Cirurgião-dentista"); assert.strictEqual(L.renda, 15000); assert.strictEqual(L.idade, 41);
   assert.strictEqual(L.origem, "facebook"); assert.strictEqual(L.agendou, 0);
 });
+t("formato real do RD (Oportunidade criada no CRM, anúncio Meta)", () => {
+  const [L] = lerLeads({ leads: [{ email: "lead@teste.com", name: "Maria", job_title: "Enfermeira", mobile_phone: "+5596999990000",
+    first_conversion: { content: { identificador: "cotador-blindagem", Renda: "5500", "Faixa renda": "R$ 5 a 7 mil", Idade: "27", Nome: "Maria da Silva Teste" },
+      source: "cotador-blindagem", conversion_origin: { source: "meta", medium: "paid-social", value: null, campaign: "blindagem26-novos", channel: "(Other)" } },
+    last_conversion: { content: { identificador: "Negociação criada no RD Station CRM", Nome: "Maria" }, source: "Negociação criada no RD Station CRM",
+      conversion_origin: { source: "unknown", medium: "unknown", campaign: "unknown", channel: "Unknown" } },
+    custom_fields: { Renda: "5500", Idade: "27", "Faixa renda": "R$ 5 a 7 mil", "Data de Nascimento": "06/04/1999" },
+    tags: ["estudo-pronto", "cotador-blindagem", "enf", "agendou-reuniao"] }] });
+  assert.strictEqual(L.nome, "Maria da Silva Teste"); assert.strictEqual(L.renda, 5500); assert.strictEqual(L.idade, 27);
+  assert.strictEqual(L.profissao, "Enfermeira"); assert.strictEqual(L.origem, "facebook"); assert.strictEqual(L.agendou, 1);
+  assert.doesNotMatch(L.conversao, /unknown|\(other\)/i);
+});
+t("nome da conversão só substitui quando começa igual", () => {
+  const [L] = lerLeads({ leads: [{ email: "x@teste.com", name: "Ana", first_conversion: { content: { Nome: "Beatriz Outra Pessoa" } } }] });
+  assert.strictEqual(L.nome, "Ana");
+});
 t("envio sem leads ou lead sem nome e e-mail → nada", () => { assert.deepStrictEqual(lerLeads({}), []); assert.deepStrictEqual(lerLeads({ leads: [{ tags: ["x"] }] }), []); });
 
 console.log(`\n${ok} testes passaram${process.exitCode ? ", HOUVE FALHAS" : ""}.`);
