@@ -768,6 +768,7 @@ const lista = (a) => (a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + "
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const ORIGENS = [["", "Não sei / outra"], ["instagram", "Anúncio no Instagram"], ["facebook", "Anúncio no Facebook"], ["google", "Anúncio no Google"], ["site", "Site / estudo online"], ["indicacao", "Indicação"]];
 const GRUPO_ANTES = "Antes do estudo";
+const GRUPO_EMAIL = "E-mails de follow-up";
 
 /* por que estou falando com você: depende da origem do lead e de ele ter agendado */
 function motivoContato(c) {
@@ -844,6 +845,8 @@ function waLib(m) {
   if (!m.renda) falta.push("a sua renda mensal aproximada");
   if (!c.prof) falta.push("a sua área de atuação");
   const temEstudo = m.dit > 0;
+  // assinatura dos e-mails, com a saída educada (LGPD)
+  const ASS = `\n\nUm abraço,\n${EU}\nCorretor de seguros · Setor Norte Seguros\n${CORRETOR.tel} · ${CORRETOR.ig}\n\nSe preferir não receber mais e-mails meus, é só responder esta mensagem.`;
   return [
     /* ----- antes do estudo: ainda sem valores ----- */
     { g: GRUPO_ANTES, id: "primeiro", t: "Primeiro contato", origem: true,
@@ -966,7 +969,32 @@ function waLib(m) {
           `Se preferir ter um valor que volta para você, posso incluir uma previdência no plano. Quer que eu simule?`] },
     { g: "O cliente respondeu…", id: "semtempo", t: "\"Agora não tenho tempo\"", quando: "Reduza o esforço: áudio curto ou um horário que ele mesmo escolhe na sua agenda.",
       b: [`Sem problema! Consigo te explicar tudo em 10 minutos.`,
-          `Prefere que eu te mande um áudio curto, ou escolhe um horário para uma ligação rápida? Minha agenda fica aqui:\n${CAL}`] }
+          `Prefere que eu te mande um áudio curto, ou escolhe um horário para uma ligação rápida? Minha agenda fica aqui:\n${CAL}`] },
+    /* ----- e-mails: para copiar e enviar pelo Gmail ----- */
+    { g: GRUPO_EMAIL, id: "em_abriu", t: "Conseguiu abrir o estudo?", email: true,
+      quando: "<b>2 dias</b> depois do envio do estudo, se ele não respondeu nem no WhatsApp. Curto e com uma pergunta só.",
+      b: [`${n}, conseguiu abrir o seu estudo?`,
+          `Oi, ${n}, tudo bem?\n\nTe enviei o seu estudo de proteção de renda há alguns dias e queria saber se você conseguiu dar uma olhada.\n\nResumindo o principal: se você precisar se afastar do trabalho, a proteção paga ${D} por mês, e o investimento fica em cerca de ${temEstudo ? brl(V) : "[valor]"} por mês.${m.validadeCurta ? ` Os valores do estudo valem até ${m.validadeCurta}.` : ""}\n\nFicou alguma dúvida? Pode responder este e-mail mesmo. Se preferir conversar, é só escolher um horário:\n${CAL}${ASS}`] },
+    { g: GRUPO_EMAIL, id: "em_inss", t: "O limite do INSS", email: true,
+      quando: "<b>5 dias</b> depois do envio, sem resposta. Mostra o que o INSS pagaria com a renda dele.",
+      b: [`${n}, o que o INSS pagaria se você precisasse parar?`,
+          `Oi, ${n}, tudo bem?\n\nUma informação que pouca gente sabe: num afastamento, o benefício do INSS é de 91% da média das contribuições, com limite de cerca de ${brl0(inssMax)} por mês, e só começa depois da perícia.${faltaInss ? `\n\nCom uma renda de ${R}, mesmo contribuindo pelo teto, faltariam pelo menos ${brl0(faltaInss)} todo mês.` : ""}${m.inss != null && temEstudo ? `\n\nNo seu estudo, o INSS pagaria cerca de ${brl0(m.inss)}. Com a proteção somando ${D} por mês, a sua renda durante o afastamento ficaria em ${brl0(m.rendaCom)}, contra ${R} de hoje.` : ""}\n\nA proteção de renda cobre essa diferença: por acidente desde o 1º dia, por doença a partir do ${m.franquia + 1}º dia.\n\nQuer que eu te explique como fica no seu caso? É só responder este e-mail.${ASS}`] },
+    { g: GRUPO_EMAIL, id: "em_duvidas", t: "Dúvidas que sempre aparecem", email: true,
+      quando: "<b>10 dias</b> depois do envio, sem resposta. Responde as objeções mais comuns sem ele precisar perguntar.",
+      b: [`3 dúvidas que sempre aparecem sobre proteção de renda`,
+          `Oi, ${n}, tudo bem?\n\nSeparei as 3 dúvidas que mais ouço de quem está avaliando a proteção de renda. Talvez alguma seja a sua:\n\n1. "Já pago o INSS."\nO INSS continua valendo. A diferença está no valor e no prazo: ele paga um valor limitado ao teto, e só depois da perícia. A proteção soma ${D} por mês ao que o INSS pagar.\n\n2. "Já tenho uma reserva."\nÓtimo, é o primeiro passo. A pergunta é se você quer usar essa reserva para pagar as contas de um afastamento ou para os seus planos. O seguro existe para que ela fique intacta.\n\n3. "E se eu nunca usar?"\n${m.prevOn ? `Na opção Completa, a previdência fica no seu nome: a reserva estimada é de ${short(m.reserva)} aos ${m.idadeApos} anos. E o seguro funciona como o cinto de segurança: o melhor cenário é você nunca precisar dele.` : `Esse é o melhor cenário: você trabalhar tranquil${o} e nunca precisar usar. Funciona como o cinto de segurança.`}\n\nSe tiver outra dúvida, é só responder este e-mail.${ASS}`] },
+    { g: GRUPO_EMAIL, id: "em_encerrar", t: "Posso encerrar o seu estudo?", email: true,
+      quando: "<b>20 dias</b> depois do envio, sem resposta. O e-mail de despedida: costuma ser o que mais recebe resposta.",
+      b: [`Posso encerrar o seu estudo, ${n}?`,
+          `Oi, ${n}, tudo bem?\n\nComo não tive retorno, vou encerrar o seu estudo de proteção de renda por aqui, para não ficar te mandando mensagens.\n\nAntes, só uma pergunta: o que pesou mais para não seguir agora: o valor, o momento ou alguma cobertura? Uma palavra já me ajuda.\n\nSe quiser retomar no futuro, é só responder este e-mail ou escolher um horário na minha agenda:\n${CAL}${ASS}`] },
+    { g: GRUPO_EMAIL, id: "em_dados", t: "Faltam dados para o estudo", email: true,
+      quando: "Para o lead que ainda não tem estudo e parou de responder no WhatsApp. Pede só o que falta na aba Dados.",
+      b: [`${n}, falta pouco para o seu estudo de proteção de renda`,
+          `Oi, ${n}, tudo bem?\n\nAqui é o ${EU}, da Setor Norte Seguros. Ficamos no meio da nossa conversa sobre a proteção da sua renda.\n\n${falta.length ? `Para eu montar o seu estudo, só falta ${lista(falta)}. Com isso, eu te mostro quanto você receberia por mês se precisar se afastar, e quanto custa.` : `Já tenho o que preciso para montar o seu estudo. Posso cotar nas seguradoras e te enviar os valores?`}\n\nPode responder este e-mail mesmo. Se preferir, a gente resolve numa ligação rápida:\n${CAL}${ASS}`] },
+    { g: GRUPO_EMAIL, id: "em_faltou", t: "Faltou à reunião", email: true,
+      quando: "Quando o lead não aparece na reunião e também não responde no WhatsApp. Não cobre: facilite remarcar.",
+      b: [`${n}, vamos remarcar a nossa conversa?`,
+          `Oi, ${n}, tudo bem?\n\nSenti a sua falta na nossa conversa${quando ? " marcada para " + quando : ""}. Imagino que a rotina tenha apertado, acontece!\n\nSe quiser, escolha um novo horário, no dia que ficar melhor para você:\n${CAL}\n\nNa conversa, eu te mostro quanto você receberia por mês se precisar se afastar, quanto custa e como funciona na prática. Leva uns 15 minutos.${ASS}`] }
   ];
 }
 const segundosAudio = (txt) => Math.max(10, Math.round(txt.replace(/\[pausa\]/g, " . . ").split(/\s+/).filter(Boolean).length / 2.4));
@@ -992,23 +1020,23 @@ function renderWA(m) {
   lib.forEach((x) => {
     if (x.g !== g) { g = x.g; k = 0; nav += `<h4>${g}</h4>`; }
     k++;
-    nav += `<button class="it ${S.wa.sel === x.id ? "on" : ""}" data-wsel="${x.id}"><i>${g === GRUPO_ANTES || g.startsWith("Conduzir") ? k : g === "Nutrição" ? "•" : "?"}</i><span>${x.t}${x.a ? ' <small class="mic" title="Tem roteiro de áudio">🎙</small>' : ""}</span></button>`;
+    nav += `<button class="it ${S.wa.sel === x.id ? "on" : ""}" data-wsel="${x.id}"><i>${g === GRUPO_ANTES || g.startsWith("Conduzir") ? k : g === "Nutrição" ? "•" : g === GRUPO_EMAIL ? "✉" : "?"}</i><span>${x.t}${x.a ? ' <small class="mic" title="Tem roteiro de áudio">🎙</small>' : ""}</span></button>`;
   });
   $("#waNav").innerHTML = nav;
   $("#waNav").querySelectorAll("[data-wsel]").forEach((b) => b.addEventListener("click", () => { S.wa.sel = b.dataset.wsel; save(); renderWA(calc()); }));
   const it = lib.find((x) => x.id === S.wa.sel);
-  const modos = [["texto", "Texto"], ["previa", "Prévia"], ...(it.a ? [["audio", "Áudio"]] : [])];
+  const modos = it.email ? [["texto", "Texto"]] : [["texto", "Texto"], ["previa", "Prévia"], ...(it.a ? [["audio", "Áudio"]] : [])];
   const modo = modos.some(([x]) => x === S.wa.modo) ? S.wa.modo : "texto";
   const audio = modo === "audio";
   const textos = audio ? it.a : it.b;
   const multi = textos.length > 1;
-  const rotulo = (i) => (!audio && it.l ? it.l[i] : multi ? `${audio ? "Roteiro" : "Mensagem"} ${i + 1} de ${textos.length}` : "");
+  const rotulo = (i) => (it.email ? ["Assunto", "Texto do e-mail"][i] : !audio && it.l ? it.l[i] : multi ? `${audio ? "Roteiro" : "Mensagem"} ${i + 1} de ${textos.length}` : "");
   $("#waMain").innerHTML = `${it.origem ? origemCard(m) : ""}<div class="card"><div class="wa-head"><h3>${it.t}</h3>
-      <div class="wa-acts"><div class="seg wa-modo">${modos.map(([x, t]) => `<button data-wm="${x}" class="${modo === x ? "on" : ""}">${t}</button>`).join("")}</div>${multi && !audio ? `<button data-copyall>Copiar tudo</button>` : ""}</div></div>
+      <div class="wa-acts"><div class="seg wa-modo">${modos.map(([x, t]) => `<button data-wm="${x}" class="${modo === x ? "on" : ""}">${t}</button>`).join("")}</div>${multi && !audio && !it.email ? `<button data-copyall>Copiar tudo</button>` : ""}</div></div>
     <div class="wa-when" style="margin-top:10px">${it.quando}</div></div>
     ${audio ? `<div class="wa-audio-tip">🎙 <b>Roteiro para gravar.</b> Fale como numa conversa, sem ler palavra por palavra. <b>[pausa]</b> = respire e dê um tempo. Os valores já estão arredondados para falar.</div>` : ""}
     <div class="bubbles${audio ? " audio" : ""}">${textos.map((txt, i) => `<div class="bub">${modo === "previa" ? `<div class="wa-prev" data-b="${i}">${fmtWA(txt)}</div><textarea data-b="${i}" hidden>${esc(txt)}</textarea>` : `<textarea data-b="${i}" rows="2">${esc(txt)}</textarea>`}<div class="bact"><span>${rotulo(i)}${audio ? ` · cerca de ${segundosAudio(txt)} s` : ""}</span><button class="primary" data-cb="${i}">Copiar</button></div></div>`).join("")}</div>
-    <div class="wa-tip">${audio ? "Copie o roteiro se quiser ler pelo celular enquanto grava." : `Os textos são editáveis antes de copiar e se ajustam sozinhos ao nome, à profissão, à origem do lead e aos valores da aba Dados. No WhatsApp, *asteriscos* viram <b>negrito</b> e _sublinhados_ viram <i>itálico</i>: veja em Prévia. ${multi ? "Envie uma mensagem de cada vez e espere a resposta antes da próxima." : ""}`}</div>`;
+    <div class="wa-tip">${it.email ? `✉ <b>Para enviar pelo Gmail.</b> Copie o assunto e o texto e cole num e-mail novo para ${esc(m.nome || "o cliente")}. Os textos são editáveis e se ajustam sozinhos ao nome e aos valores da aba Dados. O estudo em PDF se envia pela aba Estudo, no botão <b>Enviar por e-mail</b>.` : audio ? "Copie o roteiro se quiser ler pelo celular enquanto grava." : `Os textos são editáveis antes de copiar e se ajustam sozinhos ao nome, à profissão, à origem do lead e aos valores da aba Dados. No WhatsApp, *asteriscos* viram <b>negrito</b> e _sublinhados_ viram <i>itálico</i>: veja em Prévia. ${multi ? "Envie uma mensagem de cada vez e espere a resposta antes da próxima." : ""}`}</div>`;
   const fit = (ta) => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
   $("#waMain").querySelectorAll("textarea:not([hidden])").forEach((ta) => { fit(ta); ta.addEventListener("input", () => fit(ta)); });
   $("#waMain").querySelectorAll("[data-wm]").forEach((b) => b.addEventListener("click", () => { S.wa.modo = b.dataset.wm; save(); renderWA(calc()); }));
@@ -1103,13 +1131,28 @@ async function withBusy(btn, label, fn) {
   btn.textContent = t; btn.disabled = false; busy = false;
 }
 const fileBase = (m) => m.nome.replace(/[\\/:*?"<>|]/g, "").trim();
-$("#btnPdfEstudo").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerando PDF…", async () => {
-  const m = calc(); await loadLib("lib/jspdf.umd.min.js");
+async function pdfEstudo(m) {
+  await loadLib("lib/jspdf.umd.min.js");
   const cvs = await capture(studyPages(m), 794, 1123, 2);
   const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
   cvs.forEach((cv, i) => { if (i) pdf.addPage(); pdf.addImage(cv.toDataURL("image/jpeg", 0.88), "JPEG", 0, 0, 210, 297); });
-  await offer(`Estudo Renda Protegida - ${fileBase(m)}.pdf`, pdf.output("blob"));
+  return { blob: pdf.output("blob"), arquivo: `Estudo Renda Protegida - ${fileBase(m)}.pdf` };
+}
+$("#btnPdfEstudo").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerando PDF…", async () => {
+  const r = await pdfEstudo(calc());
+  await offer(r.arquivo, r.blob);
 }));
+/* e-mail do envio do estudo: mesmo texto da mensagem "Envio do estudo", com o PDF em anexo */
+function emailEstudo(m) {
+  const EU = PERFIL.nome || CORRETOR.nome;
+  const texto = [
+    `Oi, ${m.first || "tudo bem"}${m.first ? ", tudo bem?" : "?"}`, "",
+    waTexts(m).wa1.replace(/^[^\n,]*, preparei/, "Preparei").replace("Te mando o estudo completo em PDF logo abaixo.", "O estudo completo segue em anexo, em PDF."), "",
+    "Pode responder este e-mail ou me chamar no WhatsApp, como preferir.", "",
+    "Um abraço,", EU, "Corretor de seguros · Setor Norte Seguros", `${CORRETOR.tel} · ${CORRETOR.ig}`
+  ].join("\n");
+  return { assunto: `Seu estudo de proteção de renda${m.first ? ", " + m.first : ""}`, texto };
+}
 $("#btnPdfDeck").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerando…", async () => {
   const m = calc(); await loadLib("lib/jspdf.umd.min.js");
   const cvs = await capture(activeSlides(m).map((s) => slideHtml(s.id, m)), 1920, 1080, 1);
@@ -1130,5 +1173,5 @@ $("#btnPptx").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerand
 renderForm();
 const h = (location.hash || "").replace("#", "");
 showTab(["clientes", "dados", "estudo", "deck", "wa"].includes(h) ? h : "clientes");
-window.__app = { get S() { return S; }, KEY, profDeTexto, setPerfil: (p) => { if (p && p.nome) PERFIL.nome = p.nome; if (p && p.calendly) PERFIL.calendly = p.calendly; if (curTab === "wa") renderWA(calc()); }, calc, save, showTab, toast, importPdf, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
+window.__app = { get S() { return S; }, KEY, profDeTexto, setPerfil: (p) => { if (p && p.nome) PERFIL.nome = p.nome; if (p && p.calendly) PERFIL.calendly = p.calendly; if (curTab === "wa") renderWA(calc()); }, calc, save, showTab, toast, importPdf, pdfEstudo, emailEstudo, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
 })();

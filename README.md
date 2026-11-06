@@ -151,6 +151,13 @@ docker compose exec app node server/cli.js desativar email@dominio.com
 - **Antes do estudo** (sem preço): primeiro contato conforme a origem, convite para conversa (link do Calendly), lembrete da reunião, faltou à reunião, sequência para quem não respondeu (1, 3, 7 e 15 dias) e conversou e sumiu.
 - **Envio do estudo:** valores em negrito e a pergunta em itálico, no formato do WhatsApp. **Prévia** mostra como fica.
 - **Áudio** (🎙 na lista): roteiro para gravar, com valores por extenso e arredondados, marcações de [pausa] e tempo estimado.
+- **E-mails de follow-up** (✉ na lista): assunto e texto para copiar e enviar pelo Gmail. Depois do estudo: conseguiu abrir (2 dias), limite do INSS (5), dúvidas comuns (10) e posso encerrar (20). Sem estudo: faltam dados e faltou à reunião. Todos terminam com a assinatura e a opção de não receber mais.
+
+### Enviar o estudo por e-mail (aba Estudo)
+
+- O botão **Enviar por e-mail** gera o PDF do estudo e envia como anexo, pela caixa do Google Workspace, com o texto do "Envio do estudo" (editável antes de enviar; *asteriscos* viram negrito).
+- Precisa do cliente salvo. Depois do envio, o cliente fica com o e-mail usado, o status passa para **Estudo enviado** (menos fechado ou perdido) e o histórico registra o envio.
+- **Configuração (uma vez):** em myaccount.google.com → Segurança, ative a verificação em duas etapas e crie uma **senha de app** ("Renda Protegida"). No EasyPanel, em renda → app → **Environment**, acrescente `SMTP_USER=edgartorres@setornorteseguros.com.br` e `SMTP_PASS=` com a senha de app, salve e clique em **Deploy**. Sem essas variáveis, o botão explica o que falta.
 
 ### Previdência (aba Dados)
 
@@ -213,11 +220,11 @@ Dica: copie a pasta `backups/` para fora do VPS de vez em quando (Google Drive, 
 
 ## 8. Testes
 
-Teste da API (35 verificações: login, bloqueio, isolamento entre corretores, versões, status, retomadas, webhook do RD, perfil, exclusão e acesso sem login). Rode com o servidor num banco **de teste** vazio:
+Teste da API (37 verificações: login, bloqueio, isolamento entre corretores, versões, status, retomadas, webhook do RD, perfil, envio do estudo por e-mail, exclusão e acesso sem login). Rode com o servidor num banco **de teste** vazio; `EMAIL_TESTE=1` monta o e-mail sem enviar:
 ```bash
 cd server && npm install
 SESSION_SECRET=$(openssl rand -hex 48) ADMIN_EMAIL=admin@teste.local ADMIN_SENHA=senha-admin-teste-1 \
-  COOKIE_SECURE=false DB_PATH=/tmp/teste.db PORT=3001 node index.js &
+  COOKIE_SECURE=false EMAIL_TESTE=1 DB_PATH=/tmp/teste.db PORT=3001 node index.js &
 BASE=http://localhost:3001 DB_PATH=/tmp/teste.db node test/api.test.js
 ```
 

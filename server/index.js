@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const { db, hoje, SqliteStore, getConfig, setConfig } = require("./db");
 const { agendarBackup, enviarBackup } = require("./backup");
 const { lerLeads } = require("./rd");
+const email = require("./email");
 
 const PORT = +process.env.PORT || 3000;
 const PUBLIC = process.env.PUBLIC_DIR || path.join(__dirname, "..", "public");
@@ -166,7 +167,7 @@ app.post("/api/logout", (req, res) => {
 app.get("/api/me", (req, res) => {
   const u = usuarioDaSessao(req);
   if (!u) return erro(res, 401, "Não logado.");
-  res.json({ user: userPublico(u) });
+  res.json({ user: userPublico(u), email: { configurado: email.configurado(), de: email.remetente() } });
 });
 
 /* troca da própria senha (liberada mesmo com troca obrigatória pendente) */
@@ -370,6 +371,37 @@ app.put("/api/clientes/:id/status", carregarCliente, (req, res) => {
   const nomeSt = (s) => STATUS_NOME[s] || s;
   registrar.run(req.cliente.id, req.user.id, "status_alterado", `${nomeSt(req.cliente.status)} → ${nomeSt(status)}${prox ? " · retomada em " + prox.split("-").reverse().join("/") : ""}`);
   res.json({ cliente: qCliente.get(req.cliente.id) });
+});
+
+/* envia o PDF do estudo para o cliente pela caixa de e-mail do corretor; depois, status "Estudo enviado" */
+const limiteEmail = rateLimit({ windowMs: 60 * 60 * 1000, limit: 40, standardHeaders: "draft-7", legacyHeaders: false, handler: (req, res) => erro(res, 429, "Muitos e-mails nesta hora. Tente mais tarde.") });
+app.post("/api/clientes/:id/email-estudo", limiteEmail, carregarCliente, async (req, res) => {
+  if (!email.configurado()) return erro(res, 503, "O envio de e-mail ainda não foi configurado no servidor (SMTP_USER e SMTP_PASS).");
+  const b = req.body || {}, c = req.cliente;
+  const para = txt(b.para, 200).toLowerCase();
+  const assunto = txt(b.assunto, 200).replace(/[\r\n]+/g, " ");
+  const texto = txt(b.texto, 20000);
+  if (!emailValido(para)) return erro(res, 400, "E-mail do cliente inválido.");
+  if (!assunto || !texto) return erro(res, 400, "Preencha o assunto e o texto.");
+  const pdf = Buffer.from(String(b.pdf || ""), "base64");
+  if (pdf.length < 1000 || pdf.subarray(0, 5).toString() !== "%PDF-") return erro(res, 400, "O PDF do estudo não veio.");
+  if (pdf.length > 12 * 1024 * 1024) return erro(res, 400, "O PDF passou de 12 MB.");
+  const arquivo = (txt(b.arquivo, 150).replace(/[\\/:*?"<>|\r\n]/g, "") || "Estudo Renda Protegida").replace(/(\.pdf)?$/i, ".pdf");
+  try {
+    await email.enviarEstudo({ nomeRemetente: userPublico(req.user).assinatura, responderPara: req.user.email, para, assunto, texto, pdf, arquivo });
+  } catch (e) {
+    console.error("Erro ao enviar e-mail:", e.message);
+    const auth = /auth|535|534|credentials|password/i.test(e.message);
+    return erro(res, 502, auth ? "O Google recusou o login do e-mail. Confira SMTP_USER e a senha de app (SMTP_PASS) no EasyPanel." : "Não foi possível enviar: " + e.message);
+  }
+  const novoStatus = ["fechado", "perdido"].includes(c.status) ? c.status : "estudo_enviado";
+  db.transaction(() => {
+    db.prepare("UPDATE clientes SET email = COALESCE(email, ?), status = ?, proxima_retomada = CASE WHEN ? = status THEN proxima_retomada ELSE NULL END, atualizado_em = datetime('now','localtime') WHERE id = ?")
+      .run(para, novoStatus, novoStatus, c.id);
+    registrar.run(c.id, req.user.id, "estudo_email", `para ${para}`);
+    if (novoStatus !== c.status) registrar.run(c.id, req.user.id, "status_alterado", `${STATUS_NOME[c.status] || c.status} → ${STATUS_NOME[novoStatus]}`);
+  })();
+  res.json({ ok: true, cliente: qCliente.get(c.id) });
 });
 
 app.get("/api/clientes/:id/eventos", carregarCliente, (req, res) => {

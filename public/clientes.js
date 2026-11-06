@@ -10,12 +10,13 @@ const diaHora = (d) => (d ? dia(d) + " " + d.slice(11, 16) : "—");
 const OWNER = "sn_rp_owner";
 const STATUS = [["lead_novo", "Lead novo"], ["negociacao", "Em negociação"], ["novo", "Novo"], ["estudo_enviado", "Estudo enviado"], ["vou_avaliar", "Vou avaliar"], ["retomada", "Retomada"], ["fechado", "Fechado"], ["perdido", "Perdido"]];
 const STATUS_NOME = Object.fromEntries(STATUS);
-const EVENTO_NOME = { estudo_salvo: "Estudo salvo", status_alterado: "Status alterado", mensagem_copiada: "Mensagem copiada", pdf_gerado: "PDF do estudo gerado", apresentacao_gerada: "Apresentação gerada", rd_lead: "Chegou do RD Station", rd_oportunidade: "RD Station" };
+const EVENTO_NOME = { estudo_salvo: "Estudo salvo", status_alterado: "Status alterado", mensagem_copiada: "Mensagem copiada", pdf_gerado: "PDF do estudo gerado", apresentacao_gerada: "Apresentação gerada", rd_lead: "Chegou do RD Station", rd_oportunidade: "RD Station", estudo_email: "Estudo enviado por e-mail" };
 const ORIGEM_NOME = { instagram: "Instagram", facebook: "Facebook", google: "Google", site: "Site", indicacao: "Indicação" };
 // mensagens de primeiro contato: ao copiar uma delas, o lead novo pode passar para "Em negociação"
 const MSG_CONTATO = ["primeiro", "agenda", "lembrete", "faltou", "semresp", "sumiu"];
 let ME = null, salvo = null; // salvo = foto do estado na última vez que salvou/abriu
 let atual = null; // { id, status } do cliente aberto
+let EMAIL = { configurado: false, de: "" }; // envio do estudo por e-mail (SMTP no servidor)
 
 /* ---------- API ---------- */
 async function api(method, url, body) {
@@ -32,7 +33,7 @@ function confirmaDescarte() { return !alterado() || confirm("Há alterações n�
 
 /* ---------- início ---------- */
 async function iniciar() {
-  try { ME = (await api("GET", "/api/me")).user; } catch (e) { return; }
+  try { const r = await api("GET", "/api/me"); ME = r.user; EMAIL = r.email || EMAIL; } catch (e) { return; }
   if (ME.trocarSenha) { location.href = "/login.html?trocar=1"; return; }
   $("#userName").textContent = ME.nome + (ME.papel === "admin" ? " · admin" : "");
   A.setPerfil({ nome: ME.assinatura, calendly: ME.calendly });
@@ -165,6 +166,43 @@ async function janelaRd() {
     };
   } catch (e) { box.innerHTML = `<div class="muted small">Erro: ${esc(e.message)}</div>`; }
 }
+
+/* ---------- enviar o estudo por e-mail ---------- */
+const blobBase64 = (blob) => new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = () => falha(new Error("não foi possível ler o PDF")); r.readAsDataURL(blob); });
+$("#btnEmailEstudo").addEventListener("click", async () => {
+  const m = A.calc();
+  if (!m.premio) { A.toast("Monte o estudo antes de enviar: faltam os valores da cotação."); return; }
+  if (!A.S.clienteId || alterado()) { A.toast("Clique em Salvar antes de enviar, para o envio ficar no histórico do cliente."); return; }
+  if (!EMAIL.configurado) {
+    abrirModal("Enviar estudo por e-mail", `<p class="small" style="margin-top:0">O envio ainda não foi configurado no servidor.</p>
+      <p class="small">No EasyPanel, em <b>renda → app → Environment</b>, crie <b>SMTP_USER</b> (o seu e-mail) e <b>SMTP_PASS</b> (a senha de app do Google), salve e clique em <b>Deploy</b>.</p>`);
+    return;
+  }
+  let c = {};
+  try { c = (await api("GET", `/api/clientes/${A.S.clienteId}`)).cliente; } catch (e) { A.toast("Erro: " + e.message); return; }
+  const e0 = A.emailEstudo(m);
+  abrirModal("Enviar estudo por e-mail", `<form id="fEmail" class="form-col" autocomplete="off">
+    <label class="f">Para<input name="para" type="email" maxlength="200" required value="${esc(c.email || "")}" placeholder="email@do-cliente.com"></label>
+    <label class="f">Assunto<input name="assunto" maxlength="200" required value="${esc(e0.assunto)}"></label>
+    <label class="f">Mensagem<textarea name="texto" rows="14" required>${esc(e0.texto)}</textarea></label>
+    <div class="muted small">📎 Anexo: o PDF do estudo, como está na tela. *Asteriscos* viram <b>negrito</b> e _sublinhados_ viram <i>itálico</i>. Sai de ${esc(EMAIL.de)}.</div>
+    <div><button class="primary" id="emEnviar">Enviar e-mail</button></div></form>`);
+  $("#fEmail").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target)), btn = $("#emEnviar");
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = "Gerando o PDF…";
+    try {
+      const id = A.S.clienteId;
+      const r = await A.pdfEstudo(A.calc());
+      btn.textContent = "Enviando…";
+      const j = await api("POST", `/api/clientes/${id}/email-estudo`, { ...f, arquivo: r.arquivo, pdf: await blobBase64(r.blob) });
+      if (atual && atual.id === id) atual.status = j.cliente.status;
+      fecharModal();
+      A.toast(`Estudo enviado para ${f.para} · Status: ${STATUS_NOME[j.cliente.status] || j.cliente.status}`);
+    } catch (er) { A.toast("Não foi possível enviar: " + er.message); btn.disabled = false; btn.textContent = "Enviar e-mail"; }
+  });
+});
 
 $("#cliNovo").addEventListener("click", () => {
   if (!confirmaDescarte()) return;

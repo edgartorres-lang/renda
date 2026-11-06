@@ -199,6 +199,28 @@ const S = (nome, renda) => ({ cli: { nome, sexo: "F", idade: "34", prof: "fisio"
     assert.strictEqual(r.json.user.assinatura, "Ana Corretora"); assert.strictEqual(r.json.user.calendly, "https://calendly.com/ana/conversa");
   });
 
+  console.log("Envio do estudo por e-mail (servidor com EMAIL_TESTE=1: monta e não envia)");
+  await t("e-mail: valida, só o dono envia, grava o histórico e muda o status", async () => {
+    assert.strictEqual((await a("GET", "/api/me")).json.email.configurado, true);
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(3000, 32)]).toString("base64");
+    const ok = { para: "Cliente@Teste.com", assunto: "Seu estudo", texto: "Oi!\n\nInvestimento: *R$ 100,00 por mês*.\n\n_Uma pergunta?_", arquivo: "Estudo Renda Protegida - Teste.pdf", pdf };
+    assert.strictEqual((await b("POST", `/api/clientes/${idA}/email-estudo`, ok)).status, 404);
+    assert.strictEqual((await a("POST", `/api/clientes/${idA}/email-estudo`, { ...ok, para: "sem-arroba" })).status, 400);
+    assert.strictEqual((await a("POST", `/api/clientes/${idA}/email-estudo`, { ...ok, pdf: Buffer.from("não é pdf").toString("base64") })).status, 400);
+    const r = await a("POST", `/api/clientes/${idA}/email-estudo`, ok);
+    assert.strictEqual(r.status, 200, JSON.stringify(r.json));
+    assert.strictEqual(r.json.cliente.status, "estudo_enviado");
+    assert.ok(r.json.cliente.email, "o cliente fica com e-mail");
+    const ev = (await a("GET", `/api/clientes/${idA}/eventos`)).json.eventos;
+    assert.ok(ev.some((e) => e.tipo === "estudo_email" && /cliente@teste\.com/.test(e.detalhe)), "evento estudo_email");
+  });
+  await t("e-mail: texto em HTML com negrito, itálico e link", () => {
+    const { paraHtml, paraTexto } = require("../email");
+    const h = paraHtml("Valor: *R$ 1,00*\n_Uma pergunta?_ https://calendly.com/x <script>");
+    assert.match(h, /<b>R\$ 1,00<\/b>/); assert.match(h, /<i>Uma pergunta\?<\/i>/); assert.match(h, /<a href="https:\/\/calendly\.com\/x">/); assert.doesNotMatch(h, /<script>/);
+    assert.strictEqual(paraTexto("Valor: *R$ 1,00*\n_Uma pergunta?_"), "Valor: R$ 1,00\nUma pergunta?");
+  });
+
   console.log("Exclusão (LGPD)");
   await t("excluir cliente apaga versões e eventos", async () => {
     assert.strictEqual((await a("DELETE", `/api/clientes/${idA}`)).status, 200);
