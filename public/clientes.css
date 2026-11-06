@@ -49,5 +49,13 @@ tr.hist>td{background:#F6F9FB}
 .hv{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px}
 .hv button{padding:5px 10px;font-size:12.5px;white-space:nowrap}
 .he{padding:4px 0;border-top:1px solid var(--line)}
+.leads-card{border-left:5px solid var(--green2,#5DB84E)}
+.leads-card[hidden]{display:none}
+.tag-ag{display:inline-block;background:#E4F4DF;color:#2E7D22;border-radius:20px;padding:0 8px;font-size:11.5px;font-weight:800;vertical-align:1px}
+.rd-url{display:flex;gap:8px;flex-wrap:wrap}
+.rd-url input{flex:1;min-width:240px;border:1.5px solid #D2DCE4;border-radius:9px;padding:7px 10px;font:600 13px Nunito,sans-serif;color:var(--ink);background:#F6F9FB}
+.rd-ev{border-top:1px solid var(--line);padding:6px 0;font-size:13px}
+.rd-ev summary{cursor:pointer}
+.rd-ev pre{max-height:300px;overflow:auto;background:#F6F9FB;border-radius:8px;padding:8px;font-size:11.5px;white-space:pre-wrap;word-break:break-word}
 .novo-user{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
 .novo-user input{flex:1;min-width:160px}

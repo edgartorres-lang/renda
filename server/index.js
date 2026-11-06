@@ -5,17 +5,21 @@ const session = require("express-session");
 const helmet = require("helmet");
 const { rateLimit } = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
-const { db, hoje, SqliteStore } = require("./db");
+const crypto = require("crypto");
+const { db, hoje, SqliteStore, getConfig, setConfig } = require("./db");
 const { agendarBackup, enviarBackup } = require("./backup");
+const { lerLeads } = require("./rd");
 
 const PORT = +process.env.PORT || 3000;
 const PUBLIC = process.env.PUBLIC_DIR || path.join(__dirname, "..", "public");
 const SECURE = process.env.COOKIE_SECURE !== "false"; // só desligue para teste local em http
 const BCRYPT_CUSTO = 12;
-const STATUS = ["novo", "estudo_enviado", "vou_avaliar", "retomada", "fechado", "perdido"];
-const STATUS_NOME = { novo: "Novo", estudo_enviado: "Estudo enviado", vou_avaliar: "Vou avaliar", retomada: "Retomada", fechado: "Fechado", perdido: "Perdido" };
-const DIAS_RETOMADA ={ vou_avaliar: 2, retomada: 5 };
+const STATUS = ["lead_novo", "negociacao", "novo", "estudo_enviado", "vou_avaliar", "retomada", "fechado", "perdido"];
+const STATUS_NOME = { lead_novo: "Lead novo", negociacao: "Em negociação", novo: "Novo", estudo_enviado: "Estudo enviado", vou_avaliar: "Vou avaliar", retomada: "Retomada", fechado: "Fechado", perdido: "Perdido" };
+const DIAS_RETOMADA = { vou_avaliar: 2, retomada: 5 };
 const EVENTOS_CLIENTE = ["mensagem_copiada", "pdf_gerado", "apresentacao_gerada"];
+const ORIGENS = ["instagram", "facebook", "google", "site", "indicacao"];
+const CALENDLY_PADRAO = "https://calendly.com/edgartorres-seguros/conversa-com-corretor";
 
 if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
   console.error("SESSION_SECRET ausente ou curto (mínimo 32 caracteres). Veja o .env.example.");
@@ -73,7 +77,8 @@ app.use(express.json({ limit: "15mb" })); // estado S pode conter a foto de capa
 
 /* ---------- utilidades ---------- */
 const erro = (res, code, msg, extra) => res.status(code).json({ erro: msg, ...(extra || {}) });
-const userPublico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, trocarSenha: !!u.trocar_senha, criado_em: u.criado_em };
+const userPublico = (u) => u && { id: u.id, nome: u.nome, email: u.email, papel: u.papel, ativo: !!u.ativo, trocarSenha: !!u.trocar_senha, criado_em: u.criado_em,
+  assinatura: u.assinatura || (u.nome === "Administrador" ? "Edgar Torres" : u.nome), calendly: u.calendly || CALENDLY_PADRAO };
 const qUser = db.prepare("SELECT * FROM users WHERE id = ?");
 const qUserEmail = db.prepare("SELECT * FROM users WHERE email = ?");
 const isApi = (req) => req.originalUrl.startsWith("/api/");
@@ -177,8 +182,78 @@ app.post("/api/senha", (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- RD Station Marketing: webhook (gatilho Oportunidade) ----------
+   Única rota de dados sem login. É protegida por um código secreto longo no endereço,
+   criado pelo próprio servidor e visto só pelo admin em Ajustes → Integração RD. */
+function segredoRd() {
+  let s = getConfig("rd_segredo");
+  if (!s) { s = crypto.randomBytes(24).toString("hex"); setConfig("rd_segredo", s); }
+  return s;
+}
+const igual = (a, b) => { const x = crypto.createHash("sha256").update(String(a)).digest(), y = crypto.createHash("sha256").update(String(b)).digest(); return crypto.timingSafeEqual(x, y); };
+const limiteRd = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: "draft-7", legacyHeaders: false, handler: (req, res) => erro(res, 429, "Muitos envios.") });
+const qClienteEmail = db.prepare("SELECT * FROM clientes WHERE email = ? COLLATE NOCASE ORDER BY id LIMIT 1");
+const qClienteNomeSemEmail = db.prepare("SELECT * FROM clientes WHERE email IS NULL AND lower(trim(nome)) = lower(trim(?)) ORDER BY id LIMIT 1");
+
+function donoDosLeads() {
+  const email = (process.env.RD_USUARIO || "").trim().toLowerCase();
+  return (email && qUserEmail.get(email)) || db.prepare("SELECT * FROM users WHERE papel = 'admin' AND ativo = 1 ORDER BY id LIMIT 1").get();
+}
+
+function gravarLead(L, dono) {
+  const c = (L.email && qClienteEmail.get(L.email)) || (L.nome && qClienteNomeSemEmail.get(L.nome));
+  if (c) {
+    db.prepare(`UPDATE clientes SET email = COALESCE(email, ?), telefone = COALESCE(telefone, ?), profissao = COALESCE(profissao, ?), renda = COALESCE(renda, ?),
+      idade = COALESCE(idade, ?), origem = COALESCE(origem, ?), agendou = MAX(agendou, ?), rd_tags = COALESCE(?, rd_tags), rd_conversao = COALESCE(?, rd_conversao),
+      atualizado_em = datetime('now','localtime') WHERE id = ?`)
+      .run(L.email || null, L.telefone, L.profissao, L.renda, L.idade, L.origem, L.agendou, L.tags, L.conversao, c.id);
+    registrar.run(c.id, c.user_id, "rd_oportunidade", "Virou oportunidade de novo no RD Station" + (L.agendou ? " · agendou" : ""));
+    return `atualizado: ${c.nome} (#${c.id})`;
+  }
+  const r = db.prepare(`INSERT INTO clientes (user_id, nome, profissao, renda, status, email, telefone, idade, origem, agendou, rd_tags, rd_conversao)
+    VALUES (?, ?, ?, ?, 'lead_novo', ?, ?, ?, ?, ?, ?, ?)`)
+    .run(dono.id, L.nome || L.email, L.profissao, L.renda, L.email || null, L.telefone, L.idade, L.origem, L.agendou, L.tags, L.conversao);
+  registrar.run(r.lastInsertRowid, dono.id, "rd_lead", "Lead novo do RD Station" + (L.origem ? " · origem: " + L.origem : "") + (L.agendou ? " · agendou" : ""));
+  return `novo: ${L.nome || L.email} (#${r.lastInsertRowid})`;
+}
+
+app.post("/api/rd/:segredo", limiteRd, express.json({ type: () => true, limit: "2mb" }), (req, res) => {
+  if (!igual(req.params.segredo, segredoRd())) return erro(res, 404, "Rota não encontrada.");
+  const leads = lerLeads(req.body);
+  const dono = donoDosLeads();
+  let resultado;
+  try {
+    resultado = !dono ? "sem usuário admin para receber" : leads.length ? db.transaction(() => leads.map((L) => gravarLead(L, dono)))().join("; ") : "nenhum lead no envio";
+  } catch (e) { console.error("RD:", e); resultado = "erro: " + e.message; }
+  // guarda os últimos 50 envios para conferência (Ajustes → Integração RD)
+  db.prepare("INSERT INTO rd_eventos (resultado, payload) VALUES (?, ?)").run(resultado.slice(0, 1000), JSON.stringify(req.body || {}).slice(0, 100000));
+  db.prepare("DELETE FROM rd_eventos WHERE id NOT IN (SELECT id FROM rd_eventos ORDER BY id DESC LIMIT 50)").run();
+  res.json({ ok: true, recebidos: leads.length });
+});
+
 /* daqui para baixo, tudo exige login (API e arquivos estáticos) */
 app.use(exigirLogin);
+
+/* ---------- perfil: nome nas mensagens e link de agendamento ---------- */
+app.put("/api/perfil", (req, res) => {
+  const b = req.body || {};
+  const assinatura = txt(b.assinatura, 80) || null;
+  const calendly = txt(b.calendly, 300) || null;
+  if (calendly && !/^https:\/\/\S+$/.test(calendly)) return erro(res, 400, "O link de agendamento precisa começar com https://");
+  db.prepare("UPDATE users SET assinatura = ?, calendly = ? WHERE id = ?").run(assinatura, calendly, req.user.id);
+  res.json({ user: userPublico(qUser.get(req.user.id)) });
+});
+
+/* ---------- integração RD (só admin): endereço do webhook e últimos envios ---------- */
+const urlRd = (req) => `${req.protocol}://${req.get("host")}/api/rd/${segredoRd()}`;
+app.get("/api/integracao/rd", exigirAdmin, (req, res) => {
+  const ev = db.prepare("SELECT * FROM rd_eventos ORDER BY id DESC LIMIT 20").all();
+  res.json({ url: urlRd(req), dono: userPublico(donoDosLeads()), eventos: ev.map((e) => ({ ...e, payload: (() => { try { return JSON.parse(e.payload); } catch (x) { return e.payload; } })() })) });
+});
+app.post("/api/integracao/rd/novo-endereco", exigirAdmin, (req, res) => {
+  setConfig("rd_segredo", crypto.randomBytes(24).toString("hex"));
+  res.json({ url: urlRd(req) });
+});
 
 /* ---------- clientes ---------- */
 const SQL_LISTA = `
@@ -239,8 +314,10 @@ app.get("/api/clientes/:id", carregarCliente, (req, res) => {
 app.put("/api/clientes/:id", carregarCliente, (req, res) => {
   const b = req.body || {};
   const c = req.cliente;
-  db.prepare("UPDATE clientes SET nome = ?, profissao = ?, renda = ?, atualizado_em = datetime('now','localtime') WHERE id = ?")
-    .run(txt(b.nome) || c.nome, b.profissao !== undefined ? txt(b.profissao) || null : c.profissao, b.renda !== undefined ? numOuNull(b.renda) : c.renda, c.id);
+  const origem = b.origem !== undefined ? (ORIGENS.includes(b.origem) ? b.origem : null) : c.origem;
+  db.prepare("UPDATE clientes SET nome = ?, profissao = ?, renda = ?, origem = ?, agendou = ?, telefone = ?, atualizado_em = datetime('now','localtime') WHERE id = ?")
+    .run(txt(b.nome) || c.nome, b.profissao !== undefined ? txt(b.profissao) || null : c.profissao, b.renda !== undefined ? numOuNull(b.renda) : c.renda,
+      origem, b.agendou !== undefined ? (b.agendou ? 1 : 0) : c.agendou, b.telefone !== undefined ? txt(b.telefone, 40) || null : c.telefone, c.id);
   res.json({ cliente: qCliente.get(c.id) });
 });
 

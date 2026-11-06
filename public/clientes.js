@@ -8,10 +8,14 @@ const brl = (v) => (v == null || v === "" ? "—" : "R$ " + (+v).toLocaleString(
 const dia = (d) => (d ? d.slice(0, 10).split("-").reverse().join("/") : "—");
 const diaHora = (d) => (d ? dia(d) + " " + d.slice(11, 16) : "—");
 const OWNER = "sn_rp_owner";
-const STATUS = [["novo", "Novo"], ["estudo_enviado", "Estudo enviado"], ["vou_avaliar", "Vou avaliar"], ["retomada", "Retomada"], ["fechado", "Fechado"], ["perdido", "Perdido"]];
+const STATUS = [["lead_novo", "Lead novo"], ["negociacao", "Em negociação"], ["novo", "Novo"], ["estudo_enviado", "Estudo enviado"], ["vou_avaliar", "Vou avaliar"], ["retomada", "Retomada"], ["fechado", "Fechado"], ["perdido", "Perdido"]];
 const STATUS_NOME = Object.fromEntries(STATUS);
-const EVENTO_NOME = { estudo_salvo: "Estudo salvo", status_alterado: "Status alterado", mensagem_copiada: "Mensagem copiada", pdf_gerado: "PDF do estudo gerado", apresentacao_gerada: "Apresentação gerada" };
+const EVENTO_NOME = { estudo_salvo: "Estudo salvo", status_alterado: "Status alterado", mensagem_copiada: "Mensagem copiada", pdf_gerado: "PDF do estudo gerado", apresentacao_gerada: "Apresentação gerada", rd_lead: "Chegou do RD Station", rd_oportunidade: "RD Station" };
+const ORIGEM_NOME = { instagram: "Instagram", facebook: "Facebook", google: "Google", site: "Site", indicacao: "Indicação" };
+// mensagens de primeiro contato: ao copiar uma delas, o lead novo pode passar para "Em negociação"
+const MSG_CONTATO = ["primeiro", "agenda", "lembrete", "faltou", "semresp", "sumiu"];
 let ME = null, salvo = null; // salvo = foto do estado na última vez que salvou/abriu
+let atual = null; // { id, status } do cliente aberto
 
 /* ---------- API ---------- */
 async function api(method, url, body) {
@@ -31,18 +35,33 @@ async function iniciar() {
   try { ME = (await api("GET", "/api/me")).user; } catch (e) { return; }
   if (ME.trocarSenha) { location.href = "/login.html?trocar=1"; return; }
   $("#userName").textContent = ME.nome + (ME.papel === "admin" ? " · admin" : "");
+  A.setPerfil({ nome: ME.assinatura, calendly: ME.calendly });
   // rascunho local de outro usuário neste navegador: descarta
   try { if (localStorage.getItem(OWNER) !== String(ME.id)) { A.setState({}); localStorage.setItem(OWNER, String(ME.id)); } } catch (e) {}
   salvo = foto();
   $("#cliStatus").innerHTML = `<option value="">Todos os status</option>` + STATUS.map(([k, t]) => `<option value="${k}">${t}</option>`).join("");
   if (ME.papel === "admin") document.querySelectorAll("#gearMenu .adm").forEach((b) => (b.hidden = false));
   carregarTudo();
+  // cliente que já estava aberto antes de recarregar a página: lembra o status (para oferecer "Em negociação")
+  const aberto = A.S.clienteId;
+  if (aberto) api("GET", `/api/clientes/${aberto}`).then((r) => { if (A.S.clienteId === aberto) atual = { id: aberto, status: r.cliente.status }; }).catch(() => {});
 }
 
 window.addEventListener("rp:tab", (e) => { if (e.detail === "clientes" && ME) carregarTudo(); });
-window.addEventListener("rp:evento", (e) => {
+window.addEventListener("rp:evento", async (e) => {
   const id = A.S.clienteId; if (!id) return;
-  api("POST", `/api/clientes/${id}/eventos`, e.detail).catch(() => {});
+  const { tipo, detalhe, sel } = e.detail;
+  api("POST", `/api/clientes/${id}/eventos`, { tipo, detalhe }).catch(() => {});
+  if (tipo === "mensagem_copiada" && MSG_CONTATO.includes(sel) && atual && atual.id === id && atual.status === "lead_novo") {
+    atual.status = "negociacao_perguntado";
+    if (!confirm(`Passar ${A.S.cli.nome || "este cliente"} de "Lead novo" para "Em negociação"?`)) return;
+    try { await api("PUT", `/api/clientes/${id}/status`, { status: "negociacao" }); atual.status = "negociacao"; A.toast("Status: Em negociação"); } catch (er) { A.toast("Erro: " + er.message); }
+  }
+});
+// origem do lead escolhida na aba WhatsApp: guarda no cliente
+window.addEventListener("rp:origem", (e) => {
+  const id = A.S.clienteId; if (!id) return;
+  api("PUT", `/api/clientes/${id}`, e.detail).catch(() => {});
 });
 
 /* ---------- salvar / sair ---------- */
@@ -85,6 +104,8 @@ gearMenu.querySelectorAll("[data-gear]").forEach((b) => b.addEventListener("clic
   if (k === "senha") janelaSenha();
   if (k === "usuarios") { abrirModal("Usuários", `<div class="muted small">Carregando…</div>`); carregarUsuarios(); }
   if (k === "backup") janelaBackup();
+  if (k === "perfil") janelaPerfil();
+  if (k === "rd") { abrirModal("Integração RD Station", `<div class="muted small">Carregando…</div>`); janelaRd(); }
 }));
 function abrirModal(titulo, html) { $("#modalTitle").textContent = titulo; $("#modalBody").innerHTML = html; $("#modal").hidden = false; }
 function fecharModal() { $("#modal").hidden = true; $("#modalBody").innerHTML = ""; }
@@ -116,6 +137,35 @@ function janelaBackup() {
   $("#btnBackup").onclick = () => { const a = document.createElement("a"); a.href = "/api/backup"; a.download = ""; document.body.appendChild(a); a.click(); a.remove(); A.toast("Backup sendo baixado…"); };
 }
 
+function janelaPerfil() {
+  abrirModal("Meu perfil", `<form id="fPerfil" class="form-col" autocomplete="off">
+    <label class="f">Seu nome nas mensagens<input name="assinatura" maxlength="80" value="${esc(ME.assinatura)}" required></label>
+    <label class="f">Link de agendamento (Calendly)<input name="calendly" type="url" maxlength="300" value="${esc(ME.calendly)}" placeholder="https://calendly.com/…"></label>
+    <div class="muted small">As mensagens do WhatsApp usam este nome ("Aqui é o …") e este link nos convites para conversa.</div>
+    <div><button class="primary">Salvar</button></div></form>`);
+  $("#fPerfil").addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+    try { ME = (await api("PUT", "/api/perfil", f)).user; A.setPerfil({ nome: ME.assinatura, calendly: ME.calendly }); fecharModal(); A.toast("Perfil salvo"); }
+    catch (er) { A.toast("Não foi possível: " + er.message); }
+  });
+}
+async function janelaRd() {
+  const box = $("#modalBody");
+  try {
+    const r = await api("GET", "/api/integracao/rd");
+    const linhas = r.eventos.map((ev) => `<details class="rd-ev"><summary><b>${diaHora(ev.recebido_em)}</b> · ${esc(ev.resultado || "")}</summary><pre>${esc(JSON.stringify(ev.payload, null, 2))}</pre></details>`).join("");
+    box.innerHTML = `<p class="small" style="margin-top:0">No RD Station Marketing, vá em <b>Integrações → Webhooks → Criar Webhook</b>, cole o endereço abaixo e escolha o gatilho <b>Oportunidade</b>. Cada lead que virar oportunidade entra aqui como <b>Lead novo</b>${r.dono ? `, no nome de ${esc(r.dono.nome)}` : ""}.</p>
+      <div class="rd-url"><input id="rdUrl" readonly value="${esc(r.url)}"><button class="primary" id="rdCopiar">Copiar endereço</button></div>
+      <div class="muted small" style="margin:6px 0 14px">Este endereço funciona como uma senha: não compartilhe. <button class="lnk small" id="rdNovo">Gerar um endereço novo</button> (o antigo para de funcionar).</div>
+      <h4 style="margin:0 0 6px">Últimos envios do RD</h4>${linhas || `<div class="muted small">Nenhum envio recebido ainda.</div>`}`;
+    $("#rdCopiar").onclick = async () => { try { await navigator.clipboard.writeText(r.url); A.toast("Endereço copiado"); } catch (e) { $("#rdUrl").select(); A.toast("Use Ctrl+C"); } };
+    $("#rdNovo").onclick = async () => {
+      if (!confirm("Gerar um endereço novo? O webhook atual do RD para de funcionar até você colar o novo endereço lá.")) return;
+      try { await api("POST", "/api/integracao/rd/novo-endereco"); janelaRd(); } catch (e) { A.toast("Erro: " + e.message); }
+    };
+  } catch (e) { box.innerHTML = `<div class="muted small">Erro: ${esc(e.message)}</div>`; }
+}
+
 $("#cliNovo").addEventListener("click", () => {
   if (!confirmaDescarte()) return;
   const keep = A.S.deck.custom; A.setState({ deck: { custom: keep } }); salvo = foto(); A.showTab("dados");
@@ -129,13 +179,25 @@ function aplicar(dados, clienteId, sel) {
   if (sel) { A.S.wa.sel = sel; A.save(); }
   salvo = foto();
 }
+/* lead sem estudo: monta a aba Dados com o que veio do RD (nome, profissão, renda, idade, origem) */
+function dadosDoCliente(c) {
+  const p = A.profDeTexto(c.profissao);
+  return { cli: { nome: c.nome, prof: p.key, profOutra: p.outra, renda: c.renda ? (+c.renda).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "", idade: c.idade ? String(c.idade) : "" } };
+}
 async function abrirCliente(id, aba, sel) {
   if (A.S.clienteId !== id && !confirmaDescarte()) return;
   try {
-    const r = await api("GET", `/api/clientes/${id}`);
-    aplicar(r.estudo ? r.estudo.dados : { cli: { nome: r.cliente.nome } }, id, sel);
+    const r = await api("GET", `/api/clientes/${id}`), c = r.cliente;
+    const d = r.estudo ? r.estudo.dados : dadosDoCliente(c);
+    d.cli = d.cli || {};
+    // dados do RD que o estudo salvo ainda não tem
+    if (!d.cli.origem && c.origem) d.cli.origem = c.origem;
+    if (!d.cli.agendou && c.agendou) d.cli.agendou = true;
+    d.cli.rdTags = c.rd_tags || "";
+    aplicar(d, id, sel);
+    atual = { id, status: c.status };
     A.showTab(aba || "dados");
-    if (!r.estudo) A.toast("Cliente sem estudo salvo ainda. Preencha e clique em Salvar.");
+    if (!r.estudo) A.toast(c.status === "lead_novo" ? "Lead do RD Station: os dados que vieram já estão na aba Dados." : "Cliente sem estudo salvo ainda. Preencha e clique em Salvar.");
   } catch (e) { A.toast("Não foi possível abrir: " + e.message); }
 }
 async function abrirVersao(estudoId) {
@@ -153,7 +215,20 @@ let tBusca;
 $("#cliBusca").addEventListener("input", () => { clearTimeout(tBusca); tBusca = setTimeout(carregarLista, 250); });
 $("#cliStatus").addEventListener("change", carregarLista);
 
-function carregarTudo() { carregarRetomadas(); carregarLista(); }
+function carregarTudo() { carregarLeads(); carregarRetomadas(); carregarLista(); }
+
+const resumoLead = (c) => [c.profissao, c.renda ? "renda " + brl(c.renda) : "", c.idade ? c.idade + " anos" : "", ORIGEM_NOME[c.origem], c.agendou ? "agendou" : ""].filter(Boolean).map(esc).join(" · ");
+async function carregarLeads() {
+  const box = $("#leads");
+  try {
+    const { clientes } = await api("GET", "/api/clientes?status=lead_novo");
+    box.hidden = !clientes.length;
+    box.innerHTML = `<h3>Leads novos do RD Station <span class="pill">${clientes.length}</span></h3>` + clientes.map((c) => `<div class="ret-it"><div><b>${esc(c.nome)}</b>${c.agendou ? ' <span class="tag-ag">agendou</span>' : ""}
+      <div class="small muted">${resumoLead(c) || "sem detalhes"} · chegou em ${diaHora(c.criado_em)}</div></div>
+      <button class="primary" data-lead="${c.id}">Primeiro contato</button></div>`).join("");
+    box.querySelectorAll("[data-lead]").forEach((b) => b.addEventListener("click", () => abrirCliente(+b.dataset.lead, "wa", "primeiro")));
+  } catch (e) { box.hidden = true; }
+}
 
 async function carregarRetomadas() {
   const box = $("#retomadas");
@@ -180,7 +255,7 @@ async function carregarLista() {
     const adm = ME.papel === "admin";
     box.innerHTML = `<div class="tbl-wrap"><table class="cli"><thead><tr><th>Cliente</th>${adm ? "<th>Corretor</th>" : ""}<th>Status</th><th>Última versão</th><th class="n">Essencial</th><th class="n">Completa</th><th>Retomada</th><th></th></tr></thead><tbody>
       ${clientes.map((c) => `<tr data-id="${c.id}" class="${A.S.clienteId === c.id ? "atual" : ""}">
-        <td><button class="lnk" data-abrir="${c.id}">${esc(c.nome)}</button><div class="muted small">${esc(c.profissao || "")}${c.renda ? (c.profissao ? " · " : "") + "renda " + brl(c.renda) : ""}</div></td>
+        <td><button class="lnk" data-abrir="${c.id}">${esc(c.nome)}</button><div class="muted small">${resumoLead(c)}${c.telefone ? " · " + esc(c.telefone) : ""}</div></td>
         ${adm ? `<td class="small">${esc(c.corretor)}</td>` : ""}
         <td><select data-st="${c.id}">${STATUS.map(([k, t]) => `<option value="${k}"${c.status === k ? " selected" : ""}>${t}</option>`).join("")}</select></td>
         <td class="small">${c.estudo_em ? diaHora(c.estudo_em) + `<div class="muted">v${c.versoes}</div>` : "—"}</td>
@@ -190,7 +265,7 @@ async function carregarLista() {
       </tr>`).join("")}</tbody></table></div>`;
     box.querySelectorAll("[data-abrir]").forEach((x) => x.addEventListener("click", () => abrirCliente(+x.dataset.abrir)));
     box.querySelectorAll("[data-st]").forEach((x) => x.addEventListener("change", async () => {
-      try { const r = await api("PUT", `/api/clientes/${x.dataset.st}/status`, { status: x.value }); A.toast(`Status: ${STATUS_NOME[r.cliente.status]}${r.cliente.proxima_retomada ? " · retomada em " + dia(r.cliente.proxima_retomada) : ""}`); carregarTudo(); }
+      try { const r = await api("PUT", `/api/clientes/${x.dataset.st}/status`, { status: x.value }); if (atual && atual.id === r.cliente.id) atual.status = r.cliente.status; A.toast(`Status: ${STATUS_NOME[r.cliente.status]}${r.cliente.proxima_retomada ? " · retomada em " + dia(r.cliente.proxima_retomada) : ""}`); carregarTudo(); }
       catch (e) { A.toast("Erro: " + e.message); }
     }));
     box.querySelectorAll("[data-hist]").forEach((x) => x.addEventListener("click", () => historico(+x.dataset.hist, x.closest("tr"))));

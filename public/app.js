@@ -5,6 +5,8 @@ const P = window.IcatuParser;
 const KEY = "sn_renda_protegida_v2";
 const TETO_PADRAO = "8.475,55", PISO_PADRAO = "1.621,00";
 const CORRETOR = { nome: "Edgar Torres", tel: "(96) 98133-9955", email: "edgartorres@setornorteseguros.com.br", ig: "@edgartorres.seguros" };
+/* nome nas mensagens e link de agendamento: vêm do perfil do usuário (Ajustes → Meu perfil) */
+const PERFIL = { nome: CORRETOR.nome, calendly: "https://calendly.com/edgartorres-seguros/conversa-com-corretor" };
 
 /* ---------- utilidades ---------- */
 const num = P.num;
@@ -36,18 +38,26 @@ const PROF = {
   outra: { M: "", F: "", cover: "saude1", ab: "Todos os dias, você coloca o seu conhecimento e a sua dedicação a serviço de outras pessoas. É o seu trabalho que sustenta a sua renda.", rot: "a sua renda depende de você estar presente e em plena forma", imp: "uma cirurgia ou uma fratura que exija semanas de repouso" }
 };
 const PROF_OPTS = [["", "Selecione"], ["fisio", "Fisioterapia"], ["to", "Terapia ocupacional"], ["dent", "Odontologia"], ["enf", "Enfermagem"], ["psi", "Psicologia"], ["fono", "Fonoaudiologia"], ["farm", "Farmácia"], ["biom", "Biomedicina"], ["med", "Medicina"], ["outra", "Outra (digitar)"]];
+/* profissão em texto livre (campo Cargo do RD) → chave da lista */
+function profDeTexto(s) {
+  const t = norm(s);
+  if (!t) return { key: "", outra: "" };
+  const regras = [["dent", /dent|odont/], ["to", /terapia ocup|terapeuta ocup/], ["fisio", /fisio/], ["enf", /enferm/], ["psi", /psic/], ["fono", /fono/], ["farm", /farmac/], ["biom", /biomed/], ["med", /medic|\bmed\b|cirurgi|anestes|pediatr|cardiolog|ortoped|ginecolog|dermatolog|psiquiatr|oftalmolog|radiolog|plantonista/]];
+  const r = regras.find(([, re]) => re.test(t));
+  return r ? { key: r[0], outra: "" } : { key: "outra", outra: String(s).trim().slice(0, 80) };
+}
 const COVERS = { fisio1: "img/fisio1.jpg", fisio2: "img/fisio2.jpg", dent1: "img/dent1.jpg", dent2: "img/dent2.jpg", enf1: "img/enf1.jpg", enf2: "img/enf2.jpg", saude1: "img/saude1.jpg" };
 const COVER_POS = { fisio1: "42% 30%", fisio2: "38% 30%", dent1: "62% 30%", dent2: "30% 30%", enf1: "50% 25%", enf2: "38% 30%", saude1: "68% 25%", custom: "50% 50%" };
 
 /* ---------- estado ---------- */
 const DEF = () => ({
-  cli: { nome: "", sexo: "", idade: "", prof: "", profOutra: "", renda: "" },
+  cli: { nome: "", sexo: "", idade: "", prof: "", profOutra: "", renda: "", origem: "", agendou: false, reuniao: "", indicou: "", rdTags: "" },
   inss: { modo: "base", base: "", valor: "", teto: TETO_PADRAO, piso: PISO_PADRAO },
   sim: { meses: "6", reserva: "", validade: "10" },
   seg: { seguradora: "Icatu Seguros", produto: "Seguro Essencial", premio: "", cobs: [], proj: [], ditMeses: "12", franquia: "15", carencia: "60", lerCar: "", lerMax: "", limPct: "10", nome: "", idade: "" },
   prev: { on: false, produto: "simples", contrib: "", inicial: "", taxa: "10", idadeApos: "65", cobs: [{ tipo: "rendaInv", valor: "" }], imp: { sexo: "", idade: "", nome: "", reserva: "", risco: "" } },
   deck: { cover: "auto", custom: "", off: { inss: true, faq: true } },
-  wa: { opcao: "essencial", sel: "estudo" },
+  wa: { opcao: "essencial", sel: "estudo", modo: "texto" },
   imp: { seg: "", prev: "" },
   clienteId: null
 });
@@ -147,7 +157,7 @@ function calc() {
   // validade
   const hoje = new Date(); m.hoje = hoje; m.hojeLonga = "Macapá, " + dataLonga(hoje);
   m.validadeDias = Math.round(num(S.sim.validade)) || 10;
-  const vd = new Date(hoje); vd.setDate(vd.getDate() + m.validadeDias); m.validade = dataCurta(vd); m.validadeCurta = vd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const vd = new Date(hoje); vd.setDate(vd.getDate() + m.validadeDias); m.validade = dataCurta(vd); m.validadeCurta = vd.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); m.validadeFala = vd.toLocaleDateString("pt-BR", { day: "numeric", month: "long" });
   m.seguradora = sg.seguradora || "Icatu Seguros"; m.produto = sg.produto || "Seguro Essencial";
   // capa
   let ck = S.deck.cover; if (ck === "auto" || (!COVERS[ck] && ck !== "custom") || (ck === "custom" && !S.deck.custom)) ck = m.P.cover;
@@ -717,55 +727,164 @@ $("#coverUpload").addEventListener("change", (e) => {
 });
 
 /* ---------- WhatsApp ---------- */
+/* formatação do WhatsApp: *negrito*, _itálico_ */
+const B = (s) => `*${s}*`;
+function fmtWA(t) {
+  return esc(t)
+    .replace(/\*([^*\n]+)\*/g, "<b>$1</b>")
+    .replace(/(^|[\s(>])_([^_\n]+)_(?=[\s.,!?)<]|$)/g, "$1<i>$2</i>")
+    .replace(/(^|[\s(>])~([^~\n]+)~(?=[\s.,!?)<]|$)/g, "$1<s>$2</s>")
+    .replace(/\n/g, "<br>");
+}
+/* números por extenso, para os roteiros de áudio */
+function extenso(n) {
+  n = Math.round(Math.abs(n || 0));
+  if (!n) return "zero";
+  const U = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "onze", "doze", "treze", "catorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
+  const D = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+  const C = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+  const ate999 = (x) => {
+    if (x === 100) return "cem";
+    const p = [], c = Math.floor(x / 100), r = x % 100;
+    if (c) p.push(C[c]);
+    if (r) p.push(r < 20 ? U[r] : D[Math.floor(r / 10)] + (r % 10 ? " e " + U[r % 10] : ""));
+    return p.join(" e ");
+  };
+  const mi = Math.floor(n / 1e6), mil = Math.floor(n / 1000) % 1000, r = n % 1000, p = [];
+  if (mi) p.push(mi === 1 ? "um milhão" : ate999(mi) + " milhões");
+  if (mil) p.push(mil === 1 ? "mil" : ate999(mil) + " mil");
+  if (r) p.push(ate999(r));
+  if (p.length > 1 && r && (r < 100 || r % 100 === 0)) return p.slice(0, -1).join(" ") + " e " + p[p.length - 1];
+  return p.join(" ");
+}
+/* valor falado: arredonda para soar natural (acima de mil, de dez em dez) */
+function falar(v) {
+  if (!v) return "[valor]";
+  const n = v >= 1000 ? Math.round(v / 10) * 10 : Math.round(v);
+  const e = extenso(n);
+  return e + (n === 1 ? " real" : /(milhão|milhões)$/.test(e) ? " de reais" : " reais");
+}
+const lista = (a) => (a.length <= 1 ? a.join("") : a.slice(0, -1).join(", ") + " e " + a[a.length - 1]);
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const ORIGENS = [["", "Não sei / outra"], ["instagram", "Anúncio no Instagram"], ["facebook", "Anúncio no Facebook"], ["google", "Anúncio no Google"], ["site", "Site / estudo online"], ["indicacao", "Indicação"]];
+const GRUPO_ANTES = "Antes do estudo";
+
+/* por que estou falando com você: depende da origem do lead e de ele ter agendado */
+function motivoContato(c) {
+  const quando = (c.reuniao || "").trim();
+  const base = {
+    instagram: "você pediu contato pela nossa publicação no Instagram",
+    facebook: "você pediu contato pela nossa publicação no Facebook",
+    google: "você pediu contato pelo nosso anúncio no Google",
+    site: "você fez o estudo de proteção de renda no nosso site",
+    indicacao: `${(c.indicou || "").trim() || "um cliente"} me passou o seu contato`
+  }[c.origem] || "";
+  const ag = c.agendou ? `agendou uma conversa comigo${quando ? " para " + quando : ""}` : "";
+  if (base && ag) return `Estou falando com você porque ${base} e inclusive ${ag}.`;
+  if (ag) return `Vi que você ${ag}.`;
+  if (base) return c.origem === "site" ? `Vi que ${base}.` : `Estou falando com você porque ${base}.`;
+  return "";
+}
+
 function waTexts(m) {
   const n = m.first || "Olá";
   const foco = S.wa.opcao === "completa" && m.prevOn ? "completa" : "essencial";
   const v = foco === "completa" ? m.completa : m.essencial;
   const risco = m.inss != null
-    ? `Hoje, se você precisar parar de trabalhar, a sua renda cai de ${brl0(m.renda)} para cerca de ${brl0(m.inss)} (INSS). Em ${m.meses} meses, são ${brl0(m.perdaSem)} a menos.`
-    : `Hoje, se você precisar parar de trabalhar, a renda deixa de entrar. Em ${m.meses} meses, são ${brl0(m.perdaSem)} a menos.`;
-  const bens = [`✅ ${brl0(m.dit)} por mês se precisar se afastar (acidente desde o 1º dia; doença a partir do ${m.franquia + 1}º dia)`];
-  if (m.dg) bens.push(`✅ ${brl0(m.dg)} de uma vez no diagnóstico de doença grave, para usar como quiser, inclusive no tratamento`);
-  if (m.ipa) bens.push(`✅ ${brl0(m.ipa)} em caso de invalidez por acidente`);
-  if (foco === "completa") m.prevCobs.forEach((c) => bens.push(c.tipo === "rendaInv" ? `✅ ${brl0(c.valor)} por mês, por toda a vida, se não puder mais trabalhar` : `✅ ${c.curto}`));
-  if (foco === "completa" && m.aporte) bens.push(`✅ ${brl(m.aporte)} por mês para a sua reserva de previdência`);
+    ? `Hoje, se você precisar parar de trabalhar, a sua renda cai de ${B(brl0(m.renda))} para cerca de ${B(brl0(m.inss))} (INSS). Em ${m.meses} meses, são ${B(brl0(m.perdaSem) + " a menos")}.`
+    : `Hoje, se você precisar parar de trabalhar, a renda deixa de entrar. Em ${m.meses} meses, são ${B(brl0(m.perdaSem) + " a menos")}.`;
+  const bens = [`✅ ${B(brl0(m.dit) + " por mês")} se precisar se afastar (acidente desde o 1º dia; doença a partir do ${m.franquia + 1}º dia)`];
+  if (m.dg) bens.push(`✅ ${B(brl0(m.dg))} de uma vez no diagnóstico de doença grave, para usar como quiser, inclusive no tratamento`);
+  if (m.ipa) bens.push(`✅ ${B(brl0(m.ipa))} em caso de invalidez por acidente`);
+  if (foco === "completa") m.prevCobs.forEach((c) => bens.push(c.tipo === "rendaInv" ? `✅ ${B(brl0(c.valor) + " por mês")}, por toda a vida, se não puder mais trabalhar` : `✅ ${c.curto}`));
+  if (foco === "completa" && m.aporte) bens.push(`✅ ${B(brl(m.aporte) + " por mês")} para a sua reserva de previdência`);
   const prevDesc = m.prevCobs.length ? (m.prevCobs.length === 1 && m.riscoCap ? "reserva + renda vitalícia por invalidez" : "reserva + coberturas de proteção") : "reserva para a aposentadoria";
-  const outra = m.prevOn ? (foco === "completa" ? `Se preferir começar só pelo seguro, a opção Essencial fica em ${brl(m.essencial)} por mês.` : `Se quiser incluir a previdência (${prevDesc}), o plano Completo fica em ${brl(m.completa)} por mês.`) : "";
+  const outra = m.prevOn ? (foco === "completa" ? `Se preferir começar só pelo seguro, a opção Essencial fica em ${B(brl(m.essencial))} por mês.` : `Se quiser incluir a previdência (${prevDesc}), o plano Completo fica em ${B(brl(m.completa))} por mês.`) : "";
   const wa1 = [
     `${n}, preparei o seu estudo com os valores oficiais da ${m.seguradora}.`, "",
     risco, "",
     "Com a proteção que montei para você:", ...bens, "",
-    `Investimento: ${brl(v)} por mês, cerca de ${brl(m.dia(v))} por dia.`,
+    `Investimento: ${B(brl(v) + " por mês")}, cerca de ${B(brl(m.dia(v)) + " por dia")}.`,
     outra ? "\n" + outra : "", "",
     "Te mando o estudo completo em PDF logo abaixo.", "",
-    `Uma pergunta: os ${brl0(m.dit)} por mês cobrem as suas contas, ou prefere que eu ajuste o valor?`
+    `_Uma pergunta: os ${brl0(m.dit)} por mês cobrem as suas contas, ou prefere que eu ajuste o valor?_`
   ].join("\n").replace(/\n{3,}/g, "\n\n");
   const g1 = m.guardar[0];
   const wa2 = [
     `${n}, separei a parte do seu estudo que mais importa para a sua avaliação:`, "",
-    `Se você guardasse os ${brl0(m.essencial)} por mês por conta própria, em 1 ano teria cerca de ${brl0(g1.v)}. Num afastamento de ${m.meses} meses por acidente, a proteção te pagaria ${brl0(m.pagoAcid)}.`, "",
+    `Se você guardasse os ${B(brl0(m.essencial))} por mês por conta própria, em 1 ano teria cerca de ${B(brl0(g1.v))}. Num afastamento de ${m.meses} meses por acidente, a proteção te pagaria ${B(brl0(m.pagoAcid))}.`, "",
     `Os valores do estudo valem até ${m.validadeCurta}. A proposta é digital e você assina pelo celular.`, "",
     `Posso te enviar a proposta da opção Essencial, de ${brl(m.essencial)} por mês?`
   ].join("\n");
   return { wa1, wa2 };
 }
 function waLib(m) {
+  const c = S.cli;
   const n = m.first || "Olá", o = m.ela ? "a" : "o";
+  const EU = PERFIL.nome || CORRETOR.nome, CAL = PERFIL.calendly;
   const R = m.renda ? brl0(m.renda) : "[sua renda]";
   const D = m.dit ? brl0(m.dit) : "[valor]";
   const foco = S.wa.opcao === "completa" && m.prevOn ? "completa" : "essencial";
   const V = foco === "completa" ? m.completa : m.essencial;
-  const rot = m.P.rot.charAt(0).toUpperCase() + m.P.rot.slice(1);
+  const rot = cap(m.P.rot);
   const g1 = m.guardar[0];
   const perda = m.inss != null
     ? `Com o INSS pagando cerca de ${brl0(m.inss)}, num afastamento de ${m.meses} meses deixariam de entrar ${brl0(m.perdaSem)}.`
     : `Num afastamento de ${m.meses} meses, deixariam de entrar ${brl0(m.perdaSem)}, sem contar o que o INSS pagaria depois da perícia.`;
   const t = waTexts(m);
+  // sem preço: a dor da profissão e o limite do INSS (91% da média das contribuições, até o teto)
+  const inssMax = m.teto * 0.91;
+  const faltaInss = m.renda > inssMax ? m.renda - inssMax : 0;
+  const rotFrase = m.profKey === "outra" ? "a sua renda depende de você estar bem para trabalhar" : `${m.P.rot}, e a sua renda depende de você estar bem para trabalhar`;
+  const quando = (c.reuniao || "").trim();
+  const mot = motivoContato(c);
+  const motFala = mot ? mot.replace(/^Estou falando com você porque/, "Tô te mandando esse áudio porque").replace(/^Vi que/, "Eu vi que") + (c.agendou ? " Muito obrigado pela confiança!" : "") + " [pausa]\n" : "";
+  const falta = [];
+  if (!m.idade) falta.push("a sua data de nascimento");
+  if (!m.renda) falta.push("a sua renda mensal aproximada");
+  if (!c.prof) falta.push("a sua área de atuação");
+  const temEstudo = m.dit > 0;
   return [
-    { g: "Conduzir a conversa", id: "primeiro", t: "Primeiro contato", quando: "Lead que fez o estudo no site e ainda não falou com você. A segunda mensagem é o seu posicionamento (proposta de valor). Não mande preço aqui: o objetivo é ganhar permissão para perguntar.",
-      b: [`Oi, ${n}, tudo bem? Aqui é o Edgar Torres, corretor da Setor Norte Seguros.`,
+    /* ----- antes do estudo: ainda sem valores ----- */
+    { g: GRUPO_ANTES, id: "primeiro", t: "Primeiro contato", origem: true,
+      quando: "Primeira mensagem para o lead. Escolha acima de onde ele veio: o texto muda sozinho. A segunda mensagem é o seu posicionamento (proposta de valor). Não mande preço aqui: o objetivo é ganhar permissão para perguntar.",
+      b: [`Oi, ${n}, tudo bem? Aqui é o ${EU}, corretor da Setor Norte Seguros.${mot ? " " + mot : ""}${c.agendou ? " Obrigado pela confiança!" : ""}`,
           `Eu trabalho com proteção de renda para profissionais da saúde: comparo seguradoras, monto o plano junto com você e acompanho até o pagamento, se um dia você precisar usar.`,
-          `Vi que você fez o estudo de proteção de renda no nosso site. Para eu ajustar os valores à sua realidade, posso te fazer 3 perguntas rápidas?`] },
+          c.agendou ? `Para a nossa conversa render mais, posso te fazer 3 perguntas rápidas antes? Assim eu já chego com valores pensados para você.`
+            : c.origem === "site" ? `Para eu ajustar os valores à sua realidade, posso te fazer 3 perguntas rápidas?`
+            : `Para eu montar um estudo com valores reais para a sua realidade, posso te fazer 3 perguntas rápidas?`],
+      a: [`Oi, ${n}, tudo bem? Aqui é o ${EU}, da Setor Norte Seguros. [pausa]\n${motFala}Eu trabalho com proteção de renda para profissionais da saúde. Eu comparo as seguradoras, monto o plano junto com você e, se um dia você precisar usar, eu te acompanho até o pagamento. [pausa]\n${c.agendou ? "Pra nossa conversa render mais, eu vou te mandar três perguntas rapidinhas aqui por escrito, tá bom? Assim eu já chego com valores pensados pra você." : "Pra eu te mostrar valores de verdade, pensados pra sua realidade, eu só preciso de três informações rápidas. Posso te mandar as perguntas aqui por escrito?"}`] },
+    { g: GRUPO_ANTES, id: "agenda", t: "Convite para conversa", origem: true,
+      quando: `Convida o lead a escolher um horário na sua agenda (${esc(CAL)}). Use depois do primeiro contato, numa retomada ou quando ele disser que prefere conversar.`,
+      b: [`${n}, para te mostrar tudo com calma, que tal uma conversa rápida comigo, por vídeo ou ligação?`,
+          `É só escolher o dia e o horário que ficarem melhores para você neste link:\n${CAL}`,
+          `Na conversa eu te mostro quanto você receberia por mês se precisar se afastar, quanto custa e como funciona na prática. Sem compromisso.`],
+      a: [`${n}, pra eu te mostrar tudo com calma, que tal a gente conversar rapidinho, por vídeo ou por ligação? [pausa]\nEu vou te mandar aqui embaixo o link da minha agenda. Aí você escolhe o dia e o horário que ficar melhor pra você. [pausa]\nNa conversa eu te mostro quanto você receberia por mês se precisasse se afastar, quanto custa e como funciona na prática. Sem compromisso nenhum, tá?`] },
+    { g: GRUPO_ANTES, id: "lembrete", t: "Lembrete da reunião", origem: true,
+      quando: "Para quem agendou. A primeira mensagem vai na véspera; a segunda, cerca de 1 hora antes. Preencha <b>Dia e hora da reunião</b> acima para o texto já sair com a data.",
+      b: [`Oi, ${n}, tudo bem? Passando para confirmar a nossa conversa ${quando ? "marcada para " + quando : "de amanhã"}. Continua bom para você?\n\nSe precisar mudar, é só escolher outro horário aqui:\n${CAL}`,
+          `${n}, daqui a pouco é a nossa conversa! Vou te mostrar quanto entraria por mês se você precisasse parar de trabalhar e como garantir essa renda. Até já!`] },
+    { g: GRUPO_ANTES, id: "faltou", t: "Faltou à reunião", origem: true,
+      quando: "Quando o lead não aparece na reunião agendada. Não cobre: facilite remarcar.",
+      b: [`Oi, ${n}, tudo bem? Senti a sua falta na nossa conversa${quando ? " marcada para " + quando : ""}. Imagino que a rotina tenha apertado, acontece!`,
+          `Se quiser, escolha um novo horário aqui, no dia que ficar melhor para você:\n${CAL}`,
+          `Se preferir, também posso te explicar tudo num áudio curto, por aqui mesmo. O que fica melhor para você?`],
+      a: [`Oi, ${n}, tudo bem? Aqui é o ${EU}. [pausa]\nSenti a sua falta na nossa conversa, mas imagino que a rotina tenha apertado. Acontece! [pausa]\nVou deixar aqui embaixo o link da minha agenda pra você escolher um novo horário. E se ficar mais fácil, eu te explico tudo por áudio mesmo, em poucos minutos. Me fala o que fica melhor pra você.`] },
+    { g: GRUPO_ANTES, id: "semresp", t: "Não respondeu", origem: true,
+      quando: "Lead que não respondeu o primeiro contato. <b>Uma mensagem por vez</b>: 1, 3, 7 e 15 dias depois. Nenhuma fala de preço: cada uma toca numa dor diferente. Se ele já conversou com você e parou, use \"Conversou e sumiu\".",
+      l: ["1 dia depois", "3 dias depois", "7 dias depois", "15 dias depois · encerra"],
+      b: [`${n}, sei que a rotina é corrida, então vou direto ao ponto: ${rotFrase}.\n\nSe você precisasse parar por alguns meses, por um acidente ou uma cirurgia, sabe quanto entraria por mês?`,
+          `${n}, uma coisa que pouca gente sabe: num afastamento, o benefício do INSS é de 91% da média das suas contribuições, com limite de cerca de ${B(brl0(inssMax) + " por mês")}, e depende da aprovação do INSS.${faltaInss ? ` Com uma renda de ${B(R)}, mesmo contribuindo pelo teto, faltariam pelo menos ${B(brl0(faltaInss))} todo mês.` : m.renda ? " E quem contribui sobre um valor menor que a renda recebe menos ainda." : ""}\n\nQuer que eu calcule a diferença no seu caso?`,
+          `${n}, o mais difícil num afastamento nem sempre é a recuperação. É fazer o tratamento pensando nas contas, vendo a reserva de anos ir embora em poucos meses.\n\nA proteção de renda existe para isso: o dinheiro entra todo mês enquanto você se recupera. Posso te mostrar como ficaria para você? Leva 10 minutos.`,
+          `${n}, vou parar de te mandar mensagens por aqui para não incomodar.\n\nSe em algum momento quiser ver como proteger a sua renda, é só me responder ou escolher um horário na minha agenda:\n${CAL}\n\nSucesso na sua rotina!`],
+      a: [`Oi, ${n}, aqui é o ${EU}, da Setor Norte. [pausa]\nSei que a sua rotina é corrida, então vou ser rápido. [pausa]\n${cap(rotFrase)}. Se você precisasse parar por alguns meses, por um acidente ou uma cirurgia, quanto entraria por mês? [pausa]\nO INSS paga no máximo uns ${falar(inssMax)} por mês, e ainda depende de aprovação.${faltaInss ? ` Com a sua renda, faltariam pelo menos ${falar(faltaInss)} todo mês.` : ""} [pausa]\nÉ exatamente isso que eu resolvo: uma renda que entra todo mês enquanto você se recupera. Me responde aqui quando puder, que eu te mostro como ficaria pra você.`] },
+    { g: GRUPO_ANTES, id: "sumiu", t: "Conversou e sumiu", origem: true,
+      quando: "Lead que começou a conversa e parou antes de você ter os dados para cotar. Retome de onde parou e peça só o que falta (a mensagem lista o que ainda está vazio na aba Dados).",
+      b: [`Oi, ${n}, tudo bem? Ficamos no meio da nossa conversa sobre a proteção da sua renda.`,
+          falta.length ? `Para eu montar o seu estudo, só falta ${lista(falta)}. Com isso eu já te mostro quanto você receberia por mês se precisar se afastar, e quanto custa.` : `Já tenho o que preciso para montar o seu estudo. Posso cotar nas seguradoras e te mandar os valores?`,
+          `Se ficar mais fácil, a gente resolve numa ligação rápida. É só escolher um horário:\n${CAL}`],
+      a: [`Oi, ${n}, tudo bem? Aqui é o ${EU}. [pausa]\nA gente começou a conversar sobre a proteção da sua renda e acabou parando no meio. [pausa]\n${falta.length ? `Pra eu montar o seu estudo, só falta ${lista(falta)}. Com isso eu já te mostro quanto você receberia por mês se precisasse se afastar, e quanto custa.` : "Eu já tenho tudo pra montar o seu estudo. Se você me der o ok, eu faço a cotação nas seguradoras e te mando os valores."} [pausa]\nSe ficar mais fácil, me chama que a gente resolve numa ligação rapidinha.`] },
+    /* ----- conduzir a conversa ----- */
     { g: "Conduzir a conversa", id: "situacao", t: "Situação", quando: "<b>S do SPIN.</b> Entender o cenário. Mande uma pergunta por vez e espere a resposta antes da próxima.",
       b: [`Hoje você atende como autônom${o}, por pessoa jurídica ou com carteira assinada?`,
           m.prof ? `Há quanto tempo você atua como ${m.prof.toLowerCase()}?` : `Há quanto tempo você atua na sua área?`,
@@ -786,8 +905,9 @@ function waLib(m) {
           `Para você, o que pesa mais: garantir a renda do mês a mês ou ter um valor maior de uma vez numa doença grave?`,
           `Para decidir com segurança, o que você precisaria saber além do valor?`,
           `Como você se sentiria sabendo que, se precisar parar, a sua renda continua entrando?`] },
-    { g: "Conduzir a conversa", id: "estudo", t: "Envio do estudo", quando: "Só depois que ele confirmar que o valor da proteção faz sentido. Mande esta mensagem e o PDF logo em seguida.",
-      b: [t.wa1] },
+    { g: "Conduzir a conversa", id: "estudo", t: "Envio do estudo", quando: "Só depois que ele confirmar que o valor da proteção faz sentido. Mande esta mensagem e o PDF logo em seguida. Os valores vão em <b>negrito</b> e a pergunta em <i>itálico</i> (veja em Prévia). O áudio é opcional: explica o estudo em cerca de 1 minuto, logo depois do PDF.",
+      b: [t.wa1],
+      a: temEstudo ? [`Oi, ${n}! Acabei de te mandar o seu estudo, mas quero te explicar rapidinho o que tem nele. [pausa]\n${m.inss != null ? `Hoje, se você precisar parar de trabalhar, a sua renda cai de ${falar(m.renda)} pra mais ou menos ${falar(m.inss)}, que é o que o INSS pagaria.` : "Hoje, se você precisar parar de trabalhar, a sua renda simplesmente deixa de entrar."} Num afastamento de ${extenso(m.meses)} meses, isso dá ${falar(m.perdaSem)} a menos. [pausa]\nCom a proteção que eu montei, você recebe ${falar(m.dit)} por mês enquanto estiver se recuperando: no caso de acidente, desde o primeiro dia, e no de doença, depois dos primeiros ${extenso(m.franquia)} dias.${m.dg ? ` E se for uma doença grave, você ainda recebe ${falar(m.dg)} de uma vez, pra usar como quiser, inclusive no tratamento.` : ""} [pausa]\nO investimento fica em cerca de ${falar(V)} por mês. Dá uns ${falar(m.dia(V))} por dia. [pausa]\nDá uma olhada com calma no PDF e me fala: esse valor de ${falar(m.dit)} por mês cobriria as suas contas, ou você prefere que eu ajuste?`] : null },
     ...(m.prevOn ? [{ g: "Conduzir a conversa", id: "completa", t: "Apresentar a Completa", quando: "Quando ele mostrar interesse e perguntar pela previdência, ou para justificar a diferença de valor. Use o pilar \"planejamento financeiro\" da proposta de valor. <b>A última mensagem é opcional:</b> só vale para quem faz a declaração completa do IR e contrata o plano PGBL.",
       b: [`A opção Completa junta duas coisas: proteger a sua renda de hoje e construir a de amanhã.`,
           `Além do seguro, ${brl(m.aporte)} por mês vão para uma previdência no seu nome (estimativa de ${short(m.reserva)} aos ${m.idadeApos} anos)${m.riscoCap ? `, e você passa a ter ${brl0(m.riscoCap)} por mês, por toda a vida, se não puder mais trabalhar, por acidente ou doença` : ""}.`,
@@ -799,29 +919,35 @@ function waLib(m) {
           `A proposta chega no seu celular e você assina por lá. A análise da seguradora leva até 15 dias úteis.`] },
     { g: "Conduzir a conversa", id: "retomada", t: "Retomada", quando: "<b>2 dias</b> depois de um \"vou avaliar\" ou de silêncio: a primeira mensagem. <b>7 dias</b> depois, se continuar sem resposta: a segunda, que encerra com uma pergunta.",
       b: [t.wa2,
-          `${n}, vou encerrar o seu estudo por aqui para não ficar te mandando mensagem.\n\nAntes, só uma pergunta: o que pesou mais para não seguir agora: o valor, o momento ou alguma cobertura? Assim consigo te ajudar melhor quando for a hora.`] },
-    { g: "Nutrição", id: "pas", t: "Lead que ainda não está pronto", quando: "<b>Roteiro PAS</b> (Problema, Agravamento, Solução). Para quem esfriou ou ainda não quis conversar. Envie uma mensagem a cada 2 ou 3 dias, entre a retomada de 2 dias e a de 7 dias.",
+          `${n}, vou encerrar o seu estudo por aqui para não ficar te mandando mensagem.\n\nAntes, só uma pergunta: o que pesou mais para não seguir agora: o valor, o momento ou alguma cobertura? Assim consigo te ajudar melhor quando for a hora.\n\nQuando quiser retomar, é só escolher um horário na minha agenda:\n${CAL}`],
+      a: temEstudo ? [`Oi, ${n}, tudo bem? Aqui é o ${EU}. [pausa]\nTô passando pra saber se você conseguiu olhar o estudo que eu te mandei. [pausa]\nSó pra relembrar o principal: se você precisar se afastar, a proteção te paga ${falar(m.dit)} por mês, e o investimento fica em cerca de ${falar(V)} por mês. [pausa]\nOs valores do estudo valem até ${m.validadeFala}. Ficou alguma dúvida que eu possa te ajudar a resolver?`] : null },
+    /* ----- nutrição ----- */
+    { g: "Nutrição", id: "pas", t: "Lead que ainda não está pronto", quando: "<b>Roteiro PAS</b> (Problema, Agravamento, Solução). Para quem já recebeu o estudo e esfriou. Envie uma mensagem a cada 2 ou 3 dias, entre a retomada de 2 dias e a de 7 dias. Sem estudo ainda? Use \"Não respondeu\", no grupo Antes do estudo.",
       b: [`${n}, uma reflexão rápida: ${m.P.rot}. Hoje, cerca de 8 em cada 10 famílias brasileiras têm alguma dívida em andamento (Peic/CNC, julho de 2026). Se a sua renda para, as parcelas continuam.`,
           `O mais difícil num afastamento nem sempre é a recuperação em si. É fazer o tratamento pensando nas contas e no padrão de vida da família, vendo a reserva de anos ir embora em poucos meses.`,
           `Foi para isso que montei o seu estudo: ${D} por mês se você precisar parar${m.dg ? `, e ${brl0(m.dg)} de uma vez numa doença grave, para usar como quiser, inclusive no tratamento` : ""}. Tudo por ${brl(m.dia(m.essencial))} por dia. Posso te mostrar em 10 minutos?`] },
+    /* ----- objeções ----- */
     { g: "O cliente respondeu…", id: "avaliar", t: "\"Vou avaliar\"", quando: "Não insista no produto. Descubra o que ele vai avaliar.",
       b: [`Claro, ${n}, é uma decisão importante mesmo.`,
-          `Para te ajudar nessa avaliação: o que pesa mais para você hoje? O valor, alguma das coberturas ou você precisa conversar com alguém antes de decidir?`] },
+          `Para te ajudar nessa avaliação: o que pesa mais para você hoje? O valor, alguma das coberturas ou você precisa conversar com alguém antes de decidir?`],
+      a: [`Claro, ${n}, é uma decisão importante mesmo, e eu prefiro que você decida com calma. [pausa]\nSó pra eu te ajudar nessa avaliação: o que pesa mais pra você hoje? É o valor, alguma das coberturas, ou você precisa conversar com alguém antes? [pausa]\nMe fala que eu te ajudo a olhar isso.`] },
     { g: "O cliente respondeu…", id: "caro", t: "\"Está caro\"", quando: "Primeiro reposicione o valor por dia e contra o que ele perderia. Só depois ofereça ajuste.",
       b: [`Entendo. Vamos olhar por outro ângulo: são ${brl(m.dia(V))} por dia para garantir ${D} por mês se você precisar parar.`,
           `Se você guardasse esse valor por conta própria, em 1 ano teria cerca de ${brl0(foco === "completa" ? fv(m.completa, m.taxaGuardar, 12) : g1.v)}. Num afastamento de ${m.meses} meses por acidente, o seguro pagaria ${brl0(m.pagoAcid)}.`,
-          foco === "completa" ? `Se preferir, começamos só pelo seguro, a opção Essencial, de ${brl(m.essencial)} por mês. A previdência pode entrar depois.` : `Também consigo ajustar o valor da renda para caber melhor no seu orçamento. Quanto ficaria confortável por mês?`] },
+          foco === "completa" ? `Se preferir, começamos só pelo seguro, a opção Essencial, de ${brl(m.essencial)} por mês. A previdência pode entrar depois.` : `Também consigo ajustar o valor da renda para caber melhor no seu orçamento. Quanto ficaria confortável por mês?`],
+      a: temEstudo ? [`Entendo, ${n}. Deixa eu te mostrar por outro ângulo. [pausa]\nSão uns ${falar(m.dia(V))} por dia pra garantir ${falar(m.dit)} por mês se você precisar parar. [pausa]\nSe você guardasse esse valor por conta própria, em um ano teria uns ${falar(foco === "completa" ? fv(m.completa, m.taxaGuardar, 12) : g1.v)}. Já num afastamento de ${extenso(m.meses)} meses por acidente, o seguro te pagaria ${falar(m.pagoAcid)}. [pausa]\n${foco === "completa" ? "Se preferir, a gente começa só pelo seguro, e a previdência entra depois." : "E se ficar apertado, eu consigo ajustar o valor da renda pra caber melhor no seu orçamento. Quanto ficaria confortável por mês pra você?"}`] : null },
     { g: "O cliente respondeu…", id: "inss", t: "\"Já pago o INSS\"", quando: "Concorde e mostre a diferença de valor e de prazo.",
       b: [`Ótimo, o INSS é importante e continua valendo. A diferença está no valor e no prazo.`,
           `${m.inss != null ? `Ele pagaria cerca de ${brl0(m.inss)}` : "Ele paga um valor limitado ao teto"}, e só depois da perícia. A proteção soma ${D} por mês: por acidente desde o 1º dia, por doença a partir do ${m.franquia + 1}º dia.`,
-          m.inss != null ? `Com os dois juntos, a sua renda durante o afastamento ficaria em ${brl0(m.rendaCom)} por mês, contra ${R} de hoje. Faz sentido para você?` : `Faz sentido para você somar as duas coisas?`] },
+          m.inss != null ? `Com os dois juntos, a sua renda durante o afastamento ficaria em ${brl0(m.rendaCom)} por mês, contra ${R} de hoje. Faz sentido para você?` : `Faz sentido para você somar as duas coisas?`],
+      a: temEstudo ? [`Que bom que você contribui, ${n}. O INSS é importante e continua valendo. [pausa]\nA diferença tá no valor e no prazo. ${m.inss != null ? `Ele te pagaria mais ou menos ${falar(m.inss)} por mês` : "Ele paga um valor limitado ao teto"}, e só depois da aprovação. [pausa]\nA proteção soma ${falar(m.dit)} por mês: por acidente, desde o primeiro dia, e por doença, depois dos primeiros ${extenso(m.franquia)} dias. [pausa]\n${m.inss != null ? `Com os dois juntos, a sua renda no afastamento ficaria em uns ${falar(m.rendaCom)} por mês. Faz sentido pra você?` : "Faz sentido pra você somar as duas coisas?"}`] : null },
     { g: "O cliente respondeu…", id: "reserva", t: "\"Já tenho reserva\"", quando: "Valorize a reserva e mostre que o seguro existe para que ela não seja consumida.",
       b: [`Ótimo, ter reserva é o primeiro passo.`,
           `A pergunta é: você quer usar essa reserva para pagar as contas de um afastamento ou para os seus planos? O seguro existe para que ela fique intacta.`,
           `Por quanto tempo a sua reserva cobriria as suas contas hoje?`] },
-    { g: "O cliente respondeu…", id: "conjuge", t: "\"Preciso falar com alguém\"", quando: "Traga a outra pessoa para a conversa, com duas opções de horário.",
+    { g: "O cliente respondeu…", id: "conjuge", t: "\"Preciso falar com alguém\"", quando: "Traga a outra pessoa para a conversa: mande o link da agenda para vocês escolherem o horário juntos.",
       b: [`Faz todo sentido decidir junto.`,
-          `Que tal uma chamada rápida de 15 minutos com vocês dois? Eu explico e vocês tiram as dúvidas na hora. Fica melhor [opção 1] ou [opção 2]?`] },
+          `Que tal uma chamada rápida de 15 minutos com vocês dois? Eu explico e vocês tiram as dúvidas na hora. Vocês escolhem o horário aqui:\n${CAL}`] },
     { g: "O cliente respondeu…", id: "jovem", t: "\"Sou jovem e saudável\"", quando: "Use a idade a favor: preço menor e aprovação mais simples.",
       b: [`Justamente por isso este é o melhor momento.`,
           `Hoje o preço é menor e a aprovação é mais simples. Acidentes não escolhem idade, e o valor sobe a cada aniversário da apólice.`,
@@ -838,10 +964,24 @@ function waLib(m) {
           `E o seguro funciona como o cinto de segurança: o melhor cenário é você nunca precisar dele.`]
         : [`O melhor cenário é exatamente esse: você trabalhar tranquil${o} e nunca precisar usar.`,
           `Se preferir ter um valor que volta para você, posso incluir uma previdência no plano. Quer que eu simule?`] },
-    { g: "O cliente respondeu…", id: "semtempo", t: "\"Agora não tenho tempo\"", quando: "Reduza o esforço: áudio curto ou ligação rápida, com horário.",
+    { g: "O cliente respondeu…", id: "semtempo", t: "\"Agora não tenho tempo\"", quando: "Reduza o esforço: áudio curto ou um horário que ele mesmo escolhe na sua agenda.",
       b: [`Sem problema! Consigo te explicar tudo em 10 minutos.`,
-          `Prefere que eu te mande um áudio curto ou marcamos uma ligação rápida? Que horário fica melhor para você?`] }
+          `Prefere que eu te mande um áudio curto, ou escolhe um horário para uma ligação rápida? Minha agenda fica aqui:\n${CAL}`] }
   ];
+}
+const segundosAudio = (txt) => Math.max(10, Math.round(txt.replace(/\[pausa\]/g, " . . ").split(/\s+/).filter(Boolean).length / 2.4));
+function origemCard(m) {
+  const c = S.cli;
+  return `<div class="card wa-origem">
+    <div class="wa-oh"><b>De onde veio o lead?</b><span class="muted small">Muda o texto das mensagens deste grupo.</span></div>
+    <div class="wa-of">
+      <label class="f">Origem<select data-wf="origem">${ORIGENS.map(([k, t]) => `<option value="${k}"${(c.origem || "") === k ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+      ${c.origem === "indicacao" ? `<label class="f">Quem indicou<input data-wf="indicou" value="${esc(c.indicou)}" placeholder="Nome de quem indicou"></label>` : ""}
+      <label class="ck"><input type="checkbox" data-wf="agendou"${c.agendou ? " checked" : ""}> Agendou reunião</label>
+      ${c.agendou ? `<label class="f">Dia e hora da reunião<input data-wf="reuniao" value="${esc(c.reuniao)}" placeholder="ex.: quinta, às 15h"></label>` : ""}
+    </div>
+    ${c.rdTags ? `<div class="muted small" style="margin-top:8px">Tags no RD Station: ${esc(c.rdTags)}</div>` : ""}
+  </div>`;
 }
 function renderWA(m) {
   $("#waOpt").innerHTML = [["essencial", "Essencial · " + (m.premio ? brl(m.essencial) : "")], ["completa", "Completa · " + (m.prevOn ? brl(m.completa) : "sem previdência")]].map(([k, t]) => `<button data-wo="${k}" class="${S.wa.opcao === k ? "on" : ""}" ${k === "completa" && !m.prevOn ? "disabled" : ""}>${t}</button>`).join("");
@@ -852,19 +992,35 @@ function renderWA(m) {
   lib.forEach((x) => {
     if (x.g !== g) { g = x.g; k = 0; nav += `<h4>${g}</h4>`; }
     k++;
-    nav += `<button class="it ${S.wa.sel === x.id ? "on" : ""}" data-wsel="${x.id}"><i>${g.startsWith("Conduzir") ? k : g === "Nutrição" ? "•" : "?"}</i><span>${x.t}</span></button>`;
+    nav += `<button class="it ${S.wa.sel === x.id ? "on" : ""}" data-wsel="${x.id}"><i>${g === GRUPO_ANTES || g.startsWith("Conduzir") ? k : g === "Nutrição" ? "•" : "?"}</i><span>${x.t}${x.a ? ' <small class="mic" title="Tem roteiro de áudio">🎙</small>' : ""}</span></button>`;
   });
   $("#waNav").innerHTML = nav;
   $("#waNav").querySelectorAll("[data-wsel]").forEach((b) => b.addEventListener("click", () => { S.wa.sel = b.dataset.wsel; save(); renderWA(calc()); }));
   const it = lib.find((x) => x.id === S.wa.sel);
-  const multi = it.b.length > 1;
-  $("#waMain").innerHTML = `<div class="card"><div class="wa-head"><h3>${it.t}</h3>${multi ? `<button data-copyall>Copiar tudo</button>` : ""}</div>
+  const modos = [["texto", "Texto"], ["previa", "Prévia"], ...(it.a ? [["audio", "Áudio"]] : [])];
+  const modo = modos.some(([x]) => x === S.wa.modo) ? S.wa.modo : "texto";
+  const audio = modo === "audio";
+  const textos = audio ? it.a : it.b;
+  const multi = textos.length > 1;
+  const rotulo = (i) => (!audio && it.l ? it.l[i] : multi ? `${audio ? "Roteiro" : "Mensagem"} ${i + 1} de ${textos.length}` : "");
+  $("#waMain").innerHTML = `${it.origem ? origemCard(m) : ""}<div class="card"><div class="wa-head"><h3>${it.t}</h3>
+      <div class="wa-acts"><div class="seg wa-modo">${modos.map(([x, t]) => `<button data-wm="${x}" class="${modo === x ? "on" : ""}">${t}</button>`).join("")}</div>${multi && !audio ? `<button data-copyall>Copiar tudo</button>` : ""}</div></div>
     <div class="wa-when" style="margin-top:10px">${it.quando}</div></div>
-    <div class="bubbles">${it.b.map((txt, i) => `<div class="bub"><textarea data-b="${i}" rows="2">${esc(txt)}</textarea><div class="bact"><span>${multi ? `Mensagem ${i + 1} de ${it.b.length}` : ""}</span><button class="primary" data-cb="${i}">Copiar</button></div></div>`).join("")}</div>
-    <div class="wa-tip">Os textos são editáveis antes de copiar, e se ajustam sozinhos ao nome, à profissão e aos valores da aba Dados. ${multi ? "Envie uma mensagem de cada vez e espere a resposta antes da próxima." : ""}</div>`;
+    ${audio ? `<div class="wa-audio-tip">🎙 <b>Roteiro para gravar.</b> Fale como numa conversa, sem ler palavra por palavra. <b>[pausa]</b> = respire e dê um tempo. Os valores já estão arredondados para falar.</div>` : ""}
+    <div class="bubbles${audio ? " audio" : ""}">${textos.map((txt, i) => `<div class="bub">${modo === "previa" ? `<div class="wa-prev" data-b="${i}">${fmtWA(txt)}</div><textarea data-b="${i}" hidden>${esc(txt)}</textarea>` : `<textarea data-b="${i}" rows="2">${esc(txt)}</textarea>`}<div class="bact"><span>${rotulo(i)}${audio ? ` · cerca de ${segundosAudio(txt)} s` : ""}</span><button class="primary" data-cb="${i}">Copiar</button></div></div>`).join("")}</div>
+    <div class="wa-tip">${audio ? "Copie o roteiro se quiser ler pelo celular enquanto grava." : `Os textos são editáveis antes de copiar e se ajustam sozinhos ao nome, à profissão, à origem do lead e aos valores da aba Dados. No WhatsApp, *asteriscos* viram <b>negrito</b> e _sublinhados_ viram <i>itálico</i>: veja em Prévia. ${multi ? "Envie uma mensagem de cada vez e espere a resposta antes da próxima." : ""}`}</div>`;
   const fit = (ta) => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
-  $("#waMain").querySelectorAll("textarea").forEach((ta) => { fit(ta); ta.addEventListener("input", () => fit(ta)); });
-  const copy = async (txt, ta) => { try { await navigator.clipboard.writeText(txt); toast("Mensagem copiada"); emit("mensagem_copiada", it.t); } catch (e) { if (ta) { ta.focus(); ta.select(); } toast("Texto selecionado: use Ctrl+C"); } };
+  $("#waMain").querySelectorAll("textarea:not([hidden])").forEach((ta) => { fit(ta); ta.addEventListener("input", () => fit(ta)); });
+  $("#waMain").querySelectorAll("[data-wm]").forEach((b) => b.addEventListener("click", () => { S.wa.modo = b.dataset.wm; save(); renderWA(calc()); }));
+  $("#waMain").querySelectorAll("[data-wf]").forEach((el) => el.addEventListener(el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input", () => {
+    const f = el.dataset.wf;
+    S.cli[f] = el.type === "checkbox" ? el.checked : el.value;
+    save();
+    if (f === "origem" || f === "agendou") window.dispatchEvent(new CustomEvent("rp:origem", { detail: { origem: S.cli.origem || null, agendou: !!S.cli.agendou } }));
+    if (el.tagName === "INPUT" && el.type !== "checkbox") { clearTimeout(renderWA.t); renderWA.t = setTimeout(() => { const pos = el.selectionStart; renderWA(calc()); const n = $(`#waMain [data-wf="${f}"]`); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } }, 350); }
+    else renderWA(calc());
+  }));
+  const copy = async (txt, ta) => { try { await navigator.clipboard.writeText(txt); toast(audio ? "Roteiro copiado" : "Mensagem copiada"); emit("mensagem_copiada", it.t + (audio ? " (áudio)" : ""), it.id); } catch (e) { if (ta && !ta.hidden) { ta.focus(); ta.select(); } toast("Não consegui copiar: selecione o texto e use Ctrl+C"); } };
   $("#waMain").querySelectorAll("[data-cb]").forEach((b) => b.addEventListener("click", () => { const ta = $(`#waMain textarea[data-b="${b.dataset.cb}"]`); copy(ta.value, ta); }));
   const all = $("#waMain [data-copyall]"); if (all) all.addEventListener("click", () => copy([...$("#waMain").querySelectorAll("textarea")].map((t) => t.value).join("\n\n")));
 }
@@ -935,7 +1091,7 @@ function preloadBg(root) {
   const urls = []; root.querySelectorAll("[style*='background-image']").forEach((el) => { const m = el.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/); if (m) urls.push(m[1]); });
   return Promise.all(urls.map((u) => new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = u; })));
 }
-function emit(tipo, detalhe) { window.dispatchEvent(new CustomEvent("rp:evento", { detail: { tipo, detalhe } })); }
+function emit(tipo, detalhe, sel) { window.dispatchEvent(new CustomEvent("rp:evento", { detail: { tipo, detalhe, sel } })); }
 async function offer(filename, blob) {
   emit(/^Estudo/.test(filename) ? "pdf_gerado" : "apresentacao_gerada", filename);
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
@@ -974,5 +1130,5 @@ $("#btnPptx").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerand
 renderForm();
 const h = (location.hash || "").replace("#", "");
 showTab(["clientes", "dados", "estudo", "deck", "wa"].includes(h) ? h : "clientes");
-window.__app = { get S() { return S; }, KEY, calc, save, showTab, toast, importPdf, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
+window.__app = { get S() { return S; }, KEY, profDeTexto, setPerfil: (p) => { if (p && p.nome) PERFIL.nome = p.nome; if (p && p.calendly) PERFIL.calendly = p.calendly; if (curTab === "wa") renderWA(calc()); }, calc, save, showTab, toast, importPdf, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
 })();

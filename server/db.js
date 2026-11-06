@@ -36,6 +36,29 @@ db.transaction = (fn) => (...args) => {
 /* Cópia consistente do banco num arquivo (API de backup do SQLite). */
 db.backup = (destino) => sqlite.backup(db, destino);
 
+/* status é validado no servidor (index.js), sem CHECK, para poder criar status novos sem recriar a tabela */
+const CLIENTES_COLS = "id, user_id, nome, profissao, renda, status, proxima_retomada, criado_em, atualizado_em, email, telefone, idade, origem, agendou, rd_tags, rd_conversao";
+function clientesSql(nome) {
+  return `CREATE TABLE IF NOT EXISTS ${nome} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  nome TEXT NOT NULL,
+  profissao TEXT,
+  renda REAL,
+  status TEXT NOT NULL DEFAULT 'novo',
+  proxima_retomada TEXT,
+  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  atualizado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  email TEXT,
+  telefone TEXT,
+  idade INTEGER,
+  origem TEXT,
+  agendou INTEGER NOT NULL DEFAULT 0,
+  rd_tags TEXT,
+  rd_conversao TEXT
+);`;
+}
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,17 +70,7 @@ CREATE TABLE IF NOT EXISTS users (
   trocar_senha INTEGER NOT NULL DEFAULT 0,
   criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE TABLE IF NOT EXISTS clientes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  nome TEXT NOT NULL,
-  profissao TEXT,
-  renda REAL,
-  status TEXT NOT NULL DEFAULT 'novo' CHECK (status IN ('novo','estudo_enviado','vou_avaliar','retomada','fechado','perdido')),
-  proxima_retomada TEXT,
-  criado_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  atualizado_em TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+${clientesSql("clientes")}
 CREATE INDEX IF NOT EXISTS idx_clientes_user ON clientes(user_id);
 CREATE INDEX IF NOT EXISTS idx_clientes_retomada ON clientes(proxima_retomada);
 CREATE TABLE IF NOT EXISTS estudos (
@@ -84,7 +97,44 @@ CREATE TABLE IF NOT EXISTS sessions (
   sess TEXT NOT NULL,
   expira INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS config (
+  chave TEXT PRIMARY KEY,
+  valor TEXT
+);
+CREATE TABLE IF NOT EXISTS rd_eventos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recebido_em TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  resultado TEXT,
+  payload TEXT
+);
 `);
+
+/* ---------- migrações de bancos antigos ---------- */
+const colunas = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+// clientes: tira o CHECK de status (para os status Lead novo e Em negociação) e cria as colunas do RD Station
+const sqlCli = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'clientes'").get().sql;
+if (/CHECK\s*\(\s*status/i.test(sqlCli)) {
+  const antigas = colunas("clientes").filter((c) => CLIENTES_COLS.split(", ").includes(c)).join(", ");
+  // cópia de segurança do banco antes de mexer na tabela
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  fs.copyFileSync(DB_PATH, `${DB_PATH}.antes-rd`);
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.transaction(() => {
+    db.exec(clientesSql("clientes_nova"));
+    db.exec(`INSERT INTO clientes_nova (${antigas}) SELECT ${antigas} FROM clientes`);
+    db.exec("DROP TABLE clientes");
+    db.exec("ALTER TABLE clientes_nova RENAME TO clientes");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_clientes_user ON clientes(user_id); CREATE INDEX IF NOT EXISTS idx_clientes_retomada ON clientes(proxima_retomada);");
+  })();
+  db.exec("PRAGMA foreign_keys = ON");
+  console.log("Banco atualizado: clientes aceita os status novos e os dados do RD Station.");
+}
+db.exec("CREATE INDEX IF NOT EXISTS idx_clientes_email ON clientes(email COLLATE NOCASE)");
+// users: nome que vai nas mensagens e link de agendamento (Calendly)
+for (const [c, tipo] of [["assinatura", "TEXT"], ["calendly", "TEXT"]]) if (!colunas("users").includes(c)) db.exec(`ALTER TABLE users ADD COLUMN ${c} ${tipo}`);
+
+const getConfig = (k) => { const r = db.prepare("SELECT valor FROM config WHERE chave = ?").get(k); return r ? r.valor : null; };
+const setConfig = (k, v) => db.prepare("INSERT INTO config (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(k, v);
 
 /* Datas no fuso do servidor (TZ=America/Belem no Docker = horário de Macapá). */
 function hoje(somarDias = 0) {
@@ -129,4 +179,4 @@ class SqliteStore extends session.Store {
   destroyUser(userId) { this.q.delUser.run(userId); }
 }
 
-module.exports = { db, hoje, SqliteStore, DB_PATH };
+module.exports = { db, hoje, SqliteStore, DB_PATH, getConfig, setConfig };

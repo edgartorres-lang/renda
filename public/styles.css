@@ -256,3 +256,19 @@ table.cobs td.n,table.cobs th.n{text-align:right;white-space:nowrap;font-weight:
 .bub .bact{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11.5px;color:#667781}
 .bub .bact button{padding:4px 12px;font-size:12.5px;border-radius:8px}
 .wa-tip{font-size:13px;color:var(--mut);line-height:1.45}
+.wa-acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.wa-modo{gap:0}
+.wa-modo button{border-radius:0;margin-left:-1.5px;padding:6px 12px;font-size:13px}
+.wa-modo button:first-child{border-radius:9px 0 0 9px;margin-left:0}
+.wa-modo button:last-child{border-radius:0 9px 9px 0}
+.wa-prev{font:500 15px/1.45 Nunito,sans-serif;color:#111B21;white-space:normal;word-break:break-word}
+.wa-prev b{font-weight:800}
+.wa-origem{border-left:5px solid var(--green2,#5DB84E)}
+.wa-oh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.wa-of{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.wa-of .f{min-width:200px;flex:1}
+.wa-of select,.wa-of input:not([type=checkbox]){width:100%}
+.wa-of .ck{display:flex;gap:8px;align-items:center;font-weight:700;font-size:14px;padding-bottom:9px;cursor:pointer}
+.wa-audio-tip{background:#FFF6E0;color:#6B4E00;border-radius:12px;padding:10px 14px;font-size:13.5px;line-height:1.45}
+.bubbles.audio .bub{background:#fff;border-radius:12px}
+.wa-nav .mic{font-size:11px;opacity:.75}

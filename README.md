@@ -136,6 +136,21 @@ docker compose exec app node server/cli.js desativar email@dominio.com
 - Status: ao marcar **Vou avaliar**, a retomada fica para hoje + 2 dias. Ao marcar **Retomada**, para hoje + 5 dias. **Fechado** e **Perdido** saem das retomadas.
 - **Abrir mensagem** (nas retomadas) carrega o cliente e abre o WhatsApp no item certo: "Vou avaliar" para quem está em *Vou avaliar*, "Retomada" para quem está em *Retomada*.
 - **Excluir** apaga o cliente com todas as versões e o histórico (pedido de exclusão da LGPD). Não tem volta, exceto pelo backup.
+- **Ajustes → Meu perfil e agenda:** o nome que vai nas mensagens ("Aqui é o …") e o link do Calendly usado nos convites.
+
+### Leads do RD Station Marketing
+
+- Em **Ajustes → Integração RD Station** (só admin) fica o endereço do webhook. No RD: **Integrações → Webhooks → Criar Webhook**, cole o endereço e escolha o gatilho **Oportunidade**.
+- Cada lead que vira oportunidade entra como **Lead novo**, no nome do admin (ou do usuário cujo e-mail estiver em `RD_USUARIO`). Vêm nome, e-mail, telefone, profissão (campo **Cargo**), renda e idade (campos personalizados com "renda" e "idade" ou "nascimento" no nome; faixa de renda vira o meio da faixa) e as tags.
+- A **origem** (Instagram, Facebook, Google, site, indicação) e o **agendou** saem das tags e das conversões. Se o lead já existe (mesmo e-mail), ele é atualizado, sem duplicar.
+- Os leads novos aparecem no topo da aba Clientes, com o botão **Primeiro contato**. Ao copiar uma mensagem do grupo "Antes do estudo", a plataforma oferece passar o cliente para **Em negociação**.
+- O endereço funciona como senha: é a única rota de dados sem login. Os últimos 50 envios ficam guardados na mesma janela, para conferência. **Gerar um endereço novo** invalida o antigo.
+
+### Mensagens (aba WhatsApp)
+
+- **Antes do estudo** (sem preço): primeiro contato conforme a origem, convite para conversa (link do Calendly), lembrete da reunião, faltou à reunião, sequência para quem não respondeu (1, 3, 7 e 15 dias) e conversou e sumiu.
+- **Envio do estudo:** valores em negrito e a pergunta em itálico, no formato do WhatsApp. **Prévia** mostra como fica.
+- **Áudio** (🎙 na lista): roteiro para gravar, com valores por extenso e arredondados, marcações de [pausa] e tempo estimado.
 
 ### Previdência (aba Dados)
 
@@ -192,13 +207,13 @@ Dica: copie a pasta `backups/` para fora do VPS de vez em quando (Google Drive, 
 
 - As senhas são guardadas com bcrypt (custo 12). O login aceita no máximo 5 tentativas erradas a cada 15 minutos por IP.
 - A sessão é guardada no SQLite, com cookie `httpOnly`, `secure` e `sameSite=strict`, e expira em 12 horas.
-- Todas as páginas e arquivos exigem login, exceto a tela de login, o logo e as fontes. A API responde `401` quando não há login, e as páginas redirecionam para `/login.html`.
+- Todas as páginas e arquivos exigem login, exceto a tela de login, o logo, as fontes e o webhook do RD Station (protegido por um código secreto de 48 caracteres no endereço). A API responde `401` quando não há login, e as páginas redirecionam para `/login.html`.
 - Cabeçalhos de segurança via helmet (CSP sem scripts externos). As fontes Montserrat e Nunito são servidas pelo próprio servidor.
 - O fuso é `America/Belem` (horário de Macapá), para que "hoje" bata com o seu dia.
 
 ## 8. Testes
 
-Teste da API (27 verificações: login, bloqueio, isolamento entre corretores, versões, status, retomadas, exclusão e acesso sem login). Rode com o servidor num banco **de teste** vazio:
+Teste da API (35 verificações: login, bloqueio, isolamento entre corretores, versões, status, retomadas, webhook do RD, perfil, exclusão e acesso sem login). Rode com o servidor num banco **de teste** vazio:
 ```bash
 cd server && npm install
 SESSION_SECRET=$(openssl rand -hex 48) ADMIN_EMAIL=admin@teste.local ADMIN_SENHA=senha-admin-teste-1 \
@@ -207,3 +222,5 @@ BASE=http://localhost:3001 DB_PATH=/tmp/teste.db node test/api.test.js
 ```
 
 Teste do cálculo da previdência (53 verificações, não precisa do servidor): `node server/test/prev.test.js`.
+
+Teste da leitura do webhook do RD (13 verificações, não precisa do servidor): `node server/test/rd.test.js`.

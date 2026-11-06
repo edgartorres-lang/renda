@@ -146,6 +146,59 @@ const S = (nome, renda) => ({ cli: { nome, sexo: "F", idade: "34", prof: "fisio"
     for (const x of ["mensagem_copiada", "pdf_gerado", "status_alterado", "estudo_salvo"]) assert.ok(tipos.includes(x), x);
   });
 
+  console.log("RD Station (webhook) e perfil");
+  let urlRd, idLead;
+  await t("só o admin vê o endereço do webhook", async () => {
+    assert.strictEqual((await a("GET", "/api/integracao/rd")).status, 403);
+    const r = await adm("GET", "/api/integracao/rd");
+    assert.strictEqual(r.status, 200); assert.match(r.json.url, /\/api\/rd\/[0-9a-f]{48}$/);
+    urlRd = new URL(r.json.url).pathname;
+  });
+  await t("endereço errado → 404 e nada é gravado", async () => {
+    assert.strictEqual((await anon("POST", "/api/rd/errado", { leads: [{ email: "x@x.com", name: "X" }] })).status, 404);
+    assert.strictEqual((await adm("GET", "/api/clientes?busca=x")).json.clientes.filter((c) => c.email === "x@x.com").length, 0);
+  });
+  const lead = { leads: [{ email: "Lead@Teste.com", name: "Lara Lead", job_title: "Dentista", mobile_phone: "(96) 98888-7777", tags: ["agendou", "instagram"], custom_fields: { "Renda mensal": "De R$ 10.000 a R$ 15.000" } }] };
+  await t("oportunidade do RD (sem login) entra como Lead novo, no nome do admin", async () => {
+    const r = await anon("POST", urlRd, lead);
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.json.recebidos, 1);
+    const c = (await adm("GET", "/api/clientes?status=lead_novo")).json.clientes.find((x) => x.email === "lead@teste.com");
+    assert.ok(c, "lead não apareceu"); idLead = c.id;
+    assert.strictEqual(c.profissao, "Dentista"); assert.strictEqual(c.renda, 12500); assert.strictEqual(c.origem, "instagram"); assert.strictEqual(c.agendou, 1);
+    assert.strictEqual(c.telefone, "(96) 98888-7777"); assert.strictEqual(c.corretor, "Administrador");
+  });
+  await t("o mesmo e-mail de novo atualiza, não duplica", async () => {
+    await anon("POST", urlRd, { leads: [{ ...lead.leads[0], email: "lead@teste.com", job_title: "Outra coisa" }] });
+    const l = (await adm("GET", "/api/clientes")).json.clientes.filter((x) => x.email === "lead@teste.com");
+    assert.strictEqual(l.length, 1); assert.strictEqual(l[0].profissao, "Dentista", "não sobrescreve o que já tinha");
+    const ev = (await adm("GET", `/api/clientes/${idLead}/eventos`)).json.eventos.map((e) => e.tipo);
+    assert.ok(ev.includes("rd_lead") && ev.includes("rd_oportunidade"));
+  });
+  await t("envio fica guardado para conferência; corretor não vê o lead do admin", async () => {
+    const r = await adm("GET", "/api/integracao/rd");
+    assert.ok(r.json.eventos.length >= 2); assert.match(r.json.eventos[0].resultado, /atualizado/);
+    assert.ok(!(await a("GET", "/api/clientes")).json.clientes.some((c) => c.id === idLead));
+  });
+  await t("Lead novo → Em negociação; origem pode ser trocada", async () => {
+    assert.strictEqual((await adm("PUT", `/api/clientes/${idLead}/status`, { status: "negociacao" })).json.cliente.status, "negociacao");
+    const r = await adm("PUT", `/api/clientes/${idLead}`, { origem: "facebook", agendou: false });
+    assert.strictEqual(r.json.cliente.origem, "facebook"); assert.strictEqual(r.json.cliente.agendou, 0);
+    assert.strictEqual((await adm("PUT", `/api/clientes/${idLead}`, { origem: "qualquer" })).json.cliente.origem, null);
+  });
+  await t("gerar endereço novo invalida o antigo", async () => {
+    const novo = new URL((await adm("POST", "/api/integracao/rd/novo-endereco")).json.url).pathname;
+    assert.notStrictEqual(novo, urlRd);
+    assert.strictEqual((await anon("POST", urlRd, lead)).status, 404);
+    assert.strictEqual((await anon("POST", novo, { leads: [] })).status, 200);
+  });
+  await t("perfil: nome nas mensagens e link de agendamento", async () => {
+    const me = (await a("GET", "/api/me")).json.user;
+    assert.strictEqual(me.assinatura, "Corretor A"); assert.match(me.calendly, /^https:\/\/calendly\.com\//);
+    assert.strictEqual((await a("PUT", "/api/perfil", { assinatura: "Ana", calendly: "http://inseguro" })).status, 400);
+    const r = await a("PUT", "/api/perfil", { assinatura: "Ana Corretora", calendly: "https://calendly.com/ana/conversa" });
+    assert.strictEqual(r.json.user.assinatura, "Ana Corretora"); assert.strictEqual(r.json.user.calendly, "https://calendly.com/ana/conversa");
+  });
+
   console.log("Exclusão (LGPD)");
   await t("excluir cliente apaga versões e eventos", async () => {
     assert.strictEqual((await a("DELETE", `/api/clientes/${idA}`)).status, 200);
