@@ -173,7 +173,15 @@ docker compose exec app node server/cli.js desativar email@dominio.com
 | MAG | 8º dia, acidente ou doença | 12 meses (365 diárias) | carência 150 dias, até 90 diárias | 60 dias |
 | Azos | franquia de 10 dias com retroativo: passou de 10 dias, paga desde o 1º | 24 meses (730 diárias) | carência 180 dias, até 120 diárias | 60 dias |
 
-- O limite "renda por afastamento até 10% da morte" é regra da Icatu e só é conferido nela. Os campos de franquia (doença e acidente) e retroativo podem ser ajustados à mão no bloco Seguro de vida.
+- **Toda cotação de seguro importada vira uma versão do cliente** (na aba Dados ou na Comparar), com a seguradora no nome da versão e no histórico. Sem cliente aberto, o cliente é criado com o nome do PDF. Se a cotação for de outra pessoa que não o cliente aberto, o site pergunta antes de salvar.
+- O limite "renda por afastamento até 10% da morte" é regra da Icatu e só é conferido nela.
+
+### Comparar cotações (aba 5, uso interno)
+
+- Mostra lado a lado as versões do cliente feitas com seguradoras diferentes (por padrão, a última de cada seguradora; até 4). Não entra no estudo, nos slides nem nas mensagens.
+- **Coberturas:** capital e mensalidade de cada uma, alinhadas por tipo (renda por afastamento, morte, invalidez, doenças graves, fraturas, funeral e outras). Verde = mais barata com o mesmo capital; "capitais diferentes" avisa quando a comparação de preço não é igual.
+- **Regras da renda por afastamento** e **indicadores**: total por mês, custo de cada R$ 1.000 de renda, quanto recebe em afastamentos de 15 dias, da simulação (acidente e doença) e de 18 meses.
+- **Sugestão de oferta** por prioridade: mais proteção por real (padrão), melhor renda por afastamento ou menor preço, com os pontos a favor e contra de cada cotação e observações fixas por seguradora. **Usar esta no estudo** abre a versão escolhida. Os campos de franquia (doença e acidente) e retroativo podem ser ajustados à mão no bloco Seguro de vida.
 
 ### Previdência (aba Dados)
 

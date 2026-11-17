@@ -66,24 +66,42 @@ window.addEventListener("rp:origem", (e) => {
 });
 
 /* ---------- salvar / sair ---------- */
+/* salva o que está na tela como uma versão nova do cliente (cria o cliente se ainda não existir) */
+async function salvarVersao(rotulo) {
+  const S = A.S, m = A.calc();
+  const body = { nome: S.cli.nome.trim(), profissao: m.prof || "", renda: m.renda || null, essencial: m.essencial || null, completa: m.prevOn ? m.completa : null, dados: S, rotulo: rotulo || "" };
+  let r;
+  if (S.clienteId) {
+    try { r = await api("POST", `/api/clientes/${S.clienteId}/estudos`, body); }
+    catch (e) { if (!/não encontrado/i.test(e.message)) throw e; S.clienteId = null; } // cliente excluído: cria de novo
+  }
+  if (!r) { r = await api("POST", "/api/clientes", body); S.clienteId = r.cliente.id; atual = { id: r.cliente.id, status: r.cliente.status }; }
+  A.save(); salvo = foto();
+  window.dispatchEvent(new CustomEvent("rp:versoes"));
+  return r;
+}
 $("#btnSalvar").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget; if (btn.disabled) return;
-  const S = A.S, m = A.calc();
-  if (!(S.cli.nome || "").trim()) { A.toast("Informe o nome do cliente na aba Dados antes de salvar."); A.showTab("dados"); return; }
-  const body = { nome: S.cli.nome.trim(), profissao: m.prof || "", renda: m.renda || null, essencial: m.essencial || null, completa: m.prevOn ? m.completa : null, dados: S };
+  if (!(A.S.cli.nome || "").trim()) { A.toast("Informe o nome do cliente na aba Dados antes de salvar."); A.showTab("dados"); return; }
   btn.disabled = true; btn.textContent = "Salvando…";
-  try {
-    let r;
-    if (S.clienteId) {
-      try { r = await api("POST", `/api/clientes/${S.clienteId}/estudos`, body); }
-      catch (e) { if (!/não encontrado/i.test(e.message)) throw e; S.clienteId = null; } // cliente excluído: cria de novo
-    }
-    if (!r) { r = await api("POST", "/api/clientes", body); S.clienteId = r.cliente.id; }
-    A.save(); salvo = foto();
-    A.toast(`Salvo: ${r.cliente.nome} · versão ${r.versao}`);
-  } catch (e) { A.toast("Não foi possível salvar: " + e.message); }
+  try { const r = await salvarVersao(); A.toast(`Salvo: ${r.cliente.nome} · versão ${r.versao}`); }
+  catch (e) { A.toast("Não foi possível salvar: " + e.message); }
   btn.disabled = false; btn.textContent = "Salvar";
 });
+/* toda cotação de seguro importada (aba Dados ou Comparar) vira uma versão do cliente */
+const normNome = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+window.__aposImportar = async (r) => {
+  if (!ME) return;
+  const S = A.S;
+  if (!(S.cli.nome || "").trim()) { A.toast("Cotação importada. Informe o nome do cliente e clique em Salvar para guardar a versão."); return; }
+  // cotação de outra pessoa com um cliente aberto: confirma antes de gravar no cliente errado
+  if (S.clienteId && r.nome && normNome(r.nome) !== normNome(S.cli.nome) && !normNome(r.nome).startsWith(normNome(S.cli.nome).split(" ")[0] + " ")
+    && !confirm(`A cotação é de "${r.nome}", mas o cliente aberto é "${S.cli.nome}". Salvar como versão de ${S.cli.nome}?`)) { A.toast("Cotação importada na tela, sem salvar versão."); return; }
+  try {
+    const v = await salvarVersao("cotação " + r.seguradora);
+    A.toast(`Cotação ${r.seguradora} salva como versão ${v.versao} de ${v.cliente.nome}`);
+  } catch (e) { A.toast("Cotação importada, mas a versão não foi salva: " + e.message); }
+};
 
 async function sair() {
   if (!confirmaDescarte()) return;
@@ -319,7 +337,7 @@ async function historico(id, tr) {
     const [{ estudos }, { eventos }] = await Promise.all([api("GET", `/api/clientes/${id}/estudos`), api("GET", `/api/clientes/${id}/eventos`)]);
     const row = document.createElement("tr"); row.className = "hist";
     row.innerHTML = `<td colspan="${tr.children.length}"><div class="hist-grid">
-      <div><h4>Versões do estudo</h4>${estudos.map((e) => `<div class="hv"><span><b>v${e.versao}</b> · ${diaHora(e.criado_em)} · ${esc(e.autor)}<br><span class="muted small">Essencial ${brl(e.essencial)}${e.completa ? " · Completa " + brl(e.completa) : ""}</span></span><button data-ver="${e.id}">Abrir esta versão</button></div>`).join("") || `<div class="muted small">Nenhuma versão salva.</div>`}</div>
+      <div><h4>Versões do estudo</h4>${estudos.map((e) => `<div class="hv"><span><b>v${e.versao}</b>${e.seguradora ? " · " + esc(e.seguradora) : ""} · ${diaHora(e.criado_em)} · ${esc(e.autor)}<br><span class="muted small">Essencial ${brl(e.essencial)}${e.completa ? " · Completa " + brl(e.completa) : ""}</span></span><button data-ver="${e.id}">Abrir esta versão</button></div>`).join("") || `<div class="muted small">Nenhuma versão salva.</div>`}</div>
       <div><h4>Histórico</h4>${eventos.map((e) => `<div class="he small"><b>${diaHora(e.criado_em)}</b> · ${EVENTO_NOME[e.tipo] || esc(e.tipo)}${e.detalhe ? ": " + esc(e.detalhe) : ""} <span class="muted">(${esc(e.autor)})</span></div>`).join("") || `<div class="muted small">Sem eventos.</div>`}</div>
     </div></td>`;
     tr.after(row);
@@ -373,5 +391,5 @@ async function acaoUser(id, body) {
 }
 
 iniciar();
-window.__clientes = { carregarTudo, abrirCliente, abrirVersao };
+window.__clientes = { carregarTudo, abrirCliente, abrirVersao, salvarVersao };
 })();

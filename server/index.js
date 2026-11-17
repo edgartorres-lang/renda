@@ -300,7 +300,7 @@ app.post("/api/clientes", (req, res) => {
     if (dados) {
       estudoId = db.prepare("INSERT INTO estudos (cliente_id, user_id, dados_json, essencial, completa) VALUES (?, ?, ?, ?, ?)")
         .run(c.lastInsertRowid, req.user.id, dados, numOuNull(b.essencial), numOuNull(b.completa)).lastInsertRowid;
-      registrar.run(c.lastInsertRowid, req.user.id, "estudo_salvo", "versão 1");
+      registrar.run(c.lastInsertRowid, req.user.id, "estudo_salvo", "versão 1" + (txt(b.rotulo, 80) ? " · " + txt(b.rotulo, 80) : ""));
     }
     return { id: c.lastInsertRowid, estudoId };
   })();
@@ -333,7 +333,7 @@ app.delete("/api/clientes/:id", carregarCliente, (req, res) => {
 });
 
 app.get("/api/clientes/:id/estudos", carregarCliente, (req, res) => {
-  const rows = db.prepare(`SELECT e.id, e.criado_em, e.essencial, e.completa, u.nome AS autor,
+  const rows = db.prepare(`SELECT e.id, e.criado_em, e.essencial, e.completa, u.nome AS autor, json_extract(e.dados_json, '$.seg.seguradora') AS seguradora,
       ROW_NUMBER() OVER (ORDER BY e.id) AS versao
     FROM estudos e JOIN users u ON u.id = e.user_id WHERE e.cliente_id = ? ORDER BY e.id DESC`).all(req.cliente.id);
   res.json({ estudos: rows });
@@ -350,7 +350,7 @@ app.post("/api/clientes/:id/estudos", carregarCliente, (req, res) => {
     db.prepare("UPDATE clientes SET nome = ?, profissao = ?, renda = ?, atualizado_em = datetime('now','localtime') WHERE id = ?")
       .run(txt(b.nome) || c.nome, b.profissao !== undefined ? txt(b.profissao) || null : c.profissao, b.renda !== undefined ? numOuNull(b.renda) : c.renda, c.id);
     const versao = db.prepare("SELECT COUNT(*) AS n FROM estudos WHERE cliente_id = ?").get(c.id).n;
-    registrar.run(c.id, req.user.id, "estudo_salvo", "versão " + versao);
+    registrar.run(c.id, req.user.id, "estudo_salvo", "versão " + versao + (txt(b.rotulo, 80) ? " · " + txt(b.rotulo, 80) : ""));
     return { id, versao };
   })();
   res.status(201).json({ cliente: qCliente.get(c.id), estudo_id: r.id, versao: r.versao });

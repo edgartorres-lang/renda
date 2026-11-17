@@ -181,6 +181,14 @@ function calc() {
   return m;
 }
 
+/* calcula uma versão salva (dados de outro estudo) sem trocar o que está na tela */
+function calcCom(d, sim) {
+  const antes = S;
+  S = deepMerge(DEF(), migrarPrev(JSON.parse(JSON.stringify(d || {}))));
+  if (sim) Object.assign(S.sim, sim);
+  try { return calc(); } finally { S = antes; }
+}
+
 function alertas(m) {
   const a = [];
   const add = (t, x) => a.push({ t, x });
@@ -406,6 +414,8 @@ async function importPdf(file) {
     }
     save(); renderForm(); refresh();
     const st2 = $("#impStatus"); if (st2) st2.textContent = "Pronto: " + (r.tipo === "seguro" ? "seguro de vida" : "previdência") + " importado. Confira a coluna Conferência.";
+    if (r.tipo === "seguro" && window.__aposImportar) await window.__aposImportar(r, file);
+    return r;
   } catch (e) {
     const st2 = $("#impStatus"); if (st2) st2.textContent = "Não consegui ler esse PDF: " + e.message + ". Preencha os campos manualmente.";
   }
@@ -1198,6 +1208,6 @@ $("#btnPptx").addEventListener("click", (e) => withBusy(e.currentTarget, "Gerand
 /* ---------- início ---------- */
 renderForm();
 const h = (location.hash || "").replace("#", "");
-showTab(["clientes", "dados", "estudo", "deck", "wa"].includes(h) ? h : "clientes");
-window.__app = { get S() { return S; }, KEY, profDeTexto, setPerfil: (p) => { if (p && p.nome) PERFIL.nome = p.nome; if (p && p.calendly) PERFIL.calendly = p.calendly; if (curTab === "wa") renderWA(calc()); }, calc, save, showTab, toast, importPdf, pdfEstudo, emailEstudo, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
+showTab(["clientes", "dados", "estudo", "deck", "wa", "comp"].includes(h) ? h : "clientes");
+window.__app = { get S() { return S; }, KEY, profDeTexto, setPerfil: (p) => { if (p && p.nome) PERFIL.nome = p.nome; if (p && p.calendly) PERFIL.calendly = p.calendly; if (curTab === "wa") renderWA(calc()); }, calc, calcCom, save, showTab, toast, importPdf, pdfEstudo, emailEstudo, studyPages, slideHtml, activeSlides, waTexts, waLib, setState: (o) => { S = deepMerge(DEF(), migrarPrev(o)); save(); renderForm(); refresh(); } };
 })();

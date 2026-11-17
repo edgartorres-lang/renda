@@ -59,3 +59,30 @@ tr.hist>td{background:#F6F9FB}
 .rd-ev pre{max-height:300px;overflow:auto;background:#F6F9FB;border-radius:8px;padding:8px;font-size:11.5px;white-space:pre-wrap;word-break:break-word}
 .novo-user{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
 .novo-user input{flex:1;min-width:160px}
+
+/* aba Comparar (uso interno) */
+.cmp-page{max-width:1180px;margin:0 auto;display:grid;gap:16px}
+.tag-int{display:inline-block;background:#FFF1D6;color:#7A4E00;border-radius:20px;padding:1px 9px;font-size:11.5px;font-weight:800;vertical-align:2px;margin-left:6px}
+.cmp-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.cmp-v{display:block;font-size:13.5px;padding:4px 0}
+.cmp-drop{display:block}
+.cmp-sug-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.cmp-win{font-size:15px;margin:6px 0 10px}
+.cmp-aviso{background:#FFF5E0;color:#7A4E00;border-radius:10px;padding:8px 10px}
+.cmp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:10px}
+.cmp-c{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.cmp-c.win{border-color:var(--green);background:#F4FAF0}
+.cmp-c .ok{color:#2D6A20}.cmp-c .no{color:#8E1F25}
+.cmp-c button{align-self:flex-start;margin-top:auto}
+.cmp-wrap{overflow-x:auto}
+table.cmp{width:100%;border-collapse:collapse;font-size:13.5px;min-width:520px}
+table.cmp th,table.cmp td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.cmp thead th{color:var(--navy);font-size:14px}
+table.cmp tbody th{font-weight:700;color:var(--ink2);width:32%}
+table.cmp td b{display:block}table.cmp td span{color:var(--mut);font-size:12.5px}
+table.cmp td.best{background:#EAF6E5}
+table.cmp td.nao{color:#9AA6B0;font-style:italic}
+table.cmp tr.sec td{background:#F2F6F9;font-weight:800;color:var(--navy);font-size:12.5px;text-transform:uppercase;letter-spacing:.03em}
+table.cmp tr.regra td{font-size:13px}
+.cmp-dif{display:inline-block;background:#FFF1D6;color:#7A4E00;border-radius:20px;padding:0 7px;font-size:11px;font-weight:700}
+@media(max-width:760px){.cmp-top{grid-template-columns:1fr}}
