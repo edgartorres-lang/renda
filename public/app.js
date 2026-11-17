@@ -54,7 +54,7 @@ const DEF = () => ({
   cli: { nome: "", sexo: "", idade: "", prof: "", profOutra: "", renda: "", origem: "", agendou: false, reuniao: "", indicou: "", rdTags: "" },
   inss: { modo: "base", base: "", valor: "", teto: TETO_PADRAO, piso: PISO_PADRAO },
   sim: { meses: "6", reserva: "", validade: "10" },
-  seg: { seguradora: "Icatu Seguros", produto: "Seguro Essencial", premio: "", cobs: [], proj: [], ditMeses: "12", franquia: "15", carencia: "60", lerCar: "", lerMax: "", limPct: "10", nome: "", idade: "" },
+  seg: { seguradora: "Icatu Seguros", produto: "Seguro Essencial", premio: "", cobs: [], proj: [], ditMeses: "12", franquia: "15", carencia: "60", lerCar: "", lerMax: "", limPct: "10", nome: "", idade: "", franqAcid: "0", retro: "", ler: "" },
   prev: { on: false, produto: "simples", contrib: "", inicial: "", taxa: "10", idadeApos: "65", cobs: [{ tipo: "rendaInv", valor: "" }], imp: { sexo: "", idade: "", nome: "", reserva: "", risco: "" } },
   deck: { cover: "auto", custom: "", off: { inss: true, faq: true } },
   wa: { opcao: "essencial", sel: "estudo", modo: "texto" },
@@ -119,9 +119,22 @@ function calc() {
   m.ditMeses = Math.round(num(sg.ditMeses)) || 12;
   m.franquia = Math.round(num(sg.franquia)) || 15;
   m.carencia = Math.round(num(sg.carencia)) || 60;
-  m.ler = dit && /LER|DORT/i.test(dit.nome);
+  m.ler = !!dit && (/LER|DORT/i.test(dit.nome) || !!sg.ler);
   m.lerCar = Math.round(num(sg.lerCar)) || 150; m.lerMax = Math.round(num(sg.lerMax)) || 90;
-  m.limPct = num(sg.limPct) || 10;
+  m.limPct = String(sg.limPct) === "0" ? 0 : num(sg.limPct) || 10; // 0 = sem limite (a regra dos 10% da morte é da Icatu)
+  // quando a renda por afastamento começa a pagar: Icatu (acidente no 1º dia, doença no 16º), MAG (8º dia), Azos (franquia com retroativo)
+  m.franqAcid = Math.round(num(sg.franqAcid)) || 0;
+  m.retro = !!sg.retro;
+  const diaIni = (fr) => (m.retro || !fr ? 1 : fr + 1);
+  const ini = (fr) => (m.retro && fr ? `desde o 1º dia, se o afastamento passar de ${fr} dias` : fr ? `a partir do ${fr + 1}º dia` : "desde o 1º dia");
+  const iniFala = (fr) => (m.retro && fr ? `desde o primeiro dia, se o afastamento passar de ${extenso(fr)} dias` : fr ? `depois dos primeiros ${extenso(fr)} dias` : "desde o primeiro dia");
+  m.diaAcid = diaIni(m.franqAcid); m.diaDoenca = diaIni(m.franquia);
+  m.iniAcid = ini(m.franqAcid); m.iniDoenca = ini(m.franquia);
+  const igual = m.mesmoInicio = m.franqAcid === m.franquia;
+  m.quando = igual ? `por acidente ou doença, ${m.iniAcid}` : `por acidente ${m.iniAcid}; por doença ${m.iniDoenca}`;
+  m.quandoFala = igual ? `por acidente ou doença, ${iniFala(m.franqAcid)}` : `no caso de acidente, ${iniFala(m.franqAcid)}, e no de doença, ${iniFala(m.franquia)}`;
+  // coberturas que o site ainda não conhece (de qualquer seguradora): entram no estudo e a Conferência avisa
+  m.cobsNovas = m.cobs.filter((x) => !/morte|invalidez|incapacidade|di[áa]ria|graves|apoio financeiro|funeral|adiantamento|fratura|ruptura/i.test(x.nome));
   // previdência (calculada no site: prev.js)
   const pr = window.Prev.calcular({
     produto: pv.produto, contrib: num(pv.contrib), inicial: num(pv.inicial), taxa: num(pv.taxa) || 10, idadeApos: num(pv.idadeApos) || 65,
@@ -146,8 +159,10 @@ function calc() {
   const inss = m.inss || 0;
   m.gapMes = Math.max(0, m.renda - inss);
   m.perdaSem = m.gapMes * m.meses;
-  m.pagoAcid = m.dit * Math.min(m.meses, m.ditMeses);
-  m.pagoDoenca = m.dit * Math.min(Math.max(0, m.meses * 30 - m.franquia), m.ditMeses * 30) / 30;
+  // quanto a proteção paga no afastamento simulado; com retroativo, passou da franquia, recebe desde o 1º dia
+  const pago = (fr) => (m.retro ? (m.meses * 30 > fr ? m.dit * Math.min(m.meses, m.ditMeses) : 0) : m.dit * Math.min(Math.max(0, m.meses * 30 - fr), m.ditMeses * 30) / 30);
+  m.pagoAcid = pago(m.franqAcid);
+  m.pagoDoenca = pago(m.franquia);
   m.perdaAcid = Math.max(0, m.perdaSem - m.pagoAcid);
   m.perdaDoenca = Math.max(0, m.perdaSem - m.pagoDoenca);
   m.rendaCom = inss + m.dit;
@@ -169,12 +184,13 @@ function calc() {
 function alertas(m) {
   const a = [];
   const add = (t, x) => a.push({ t, x });
-  if (!S.imp.seg && !m.cobs.length) add("info", "Importe o PDF do seguro (Icatu Essencial) ou preencha as coberturas.");
+  if (!S.imp.seg && !m.cobs.length) add("info", "Importe o PDF do seguro (Icatu, MAG ou Azos) ou preencha as coberturas.");
   if (!m.renda) add("err", "Informe a renda mensal do cliente.");
   if (!m.dit) add("err", "Não encontrei a Diária de Incapacidade Temporária (DIT) nas coberturas.");
   if (m.cobs.length && Math.abs(m.soma - m.premio) > 0.02) add("err", `A soma das coberturas (${brl(m.soma)}) é diferente do prêmio total (${brl(m.premio)}). Falta alguma linha?`);
   else if (m.cobs.length) add("ok", `Soma das ${m.cobs.length} coberturas confere com o prêmio de ${brl(m.premio)}.`);
-  if (m.dit && m.morte && m.dit > m.morte * m.limPct / 100) add("err", `DIT de ${brl0(m.dit)} passa do limite de ${m.limPct}% da cobertura de morte (${brl0(m.morte * m.limPct / 100)}).`);
+  m.cobsNovas.forEach((x) => add("warn", `Cobertura nova: "${x.nome}" (${x.capital ? brl0(x.capital) : "sem capital"} · ${brl(x.premio)}/mês). Entra no estudo sem explicação; confira o nome antes de enviar.`));
+  if (m.dit && m.morte && m.limPct && m.dit > m.morte * m.limPct / 100) add("err", `DIT de ${brl0(m.dit)} passa do limite de ${m.limPct}% da cobertura de morte (${brl0(m.morte * m.limPct / 100)}).`);
   if (m.dit && m.renda && m.dit > m.renda) add("warn", `DIT (${brl0(m.dit)}) maior que a renda informada (${brl0(m.renda)}). Na indenização, a seguradora pode exigir comprovação de renda.`);
   if (m.inss == null) add("warn", "INSS em branco: o estudo vai mostrar a perda sem considerar o INSS. Informe a base de contribuição ou o valor.");
   if (!m.sexo) add("warn", "Informe o sexo do cliente (define a carta no feminino ou no masculino e confere o orçamento da previdência).");
@@ -207,9 +223,9 @@ function renderForm() {
   const cobRows = (S.seg.cobs || []).map((c, i) => `<tr><td><input data-cob="${i}" data-f="nome" value="${esc(c.nome)}"></td><td style="width:130px"><input data-cob="${i}" data-f="capital" value="${esc(c.capital)}" inputmode="decimal"></td><td style="width:110px"><input data-cob="${i}" data-f="premio" value="${esc(c.premio)}" inputmode="decimal"></td><td class="x"><button data-delcob="${i}" title="Remover">×</button></td></tr>`).join("");
   $("#form").innerHTML = `
   <div class="card">
-    <h3>Importar orçamentos da Icatu</h3>
+    <h3>Importar orçamentos (Icatu, MAG ou Azos)</h3>
     <div class="drops">
-      <label class="drop ${S.imp.seg ? "ok" : ""}">PDF do seguro de vida<small>${S.imp.seg ? esc(S.imp.seg) : "Seguro Essencial · \"Sua simulação\""}</small><input type="file" accept="application/pdf" data-imp="seguro" hidden></label>
+      <label class="drop ${S.imp.seg ? "ok" : ""}">PDF do seguro de vida<small>${S.imp.seg ? esc(S.imp.seg) : "Icatu, MAG (Vida Toda) ou Azos"}</small><input type="file" accept="application/pdf" data-imp="seguro" hidden></label>
       <label class="drop ${S.imp.prev ? "ok" : ""}">PDF da previdência<small>${S.imp.prev ? esc(S.imp.prev) : "Opcional · a previdência agora é calculada no site"}</small><input type="file" accept="application/pdf" data-imp="prev" hidden></label>
     </div>
     <div class="status" id="impStatus">Você também pode arrastar os dois PDFs para esta página.</div>
@@ -250,7 +266,9 @@ function renderForm() {
       ${fld("seg.produto", "Produto")}
       ${fld("seg.premio", "Prêmio mensal total (R$)", { num: 1 })}
       ${fld("seg.ditMeses", "DIT paga por até (meses)", { num: 1 })}
-      ${fld("seg.franquia", "Franquia da DIT por doença (dias)", { num: 1, hint: "Icatu: paga a partir do 16º dia" })}
+      ${fld("seg.franquia", "Franquia da DIT por doença (dias)", { num: 1, hint: "Icatu 15 · MAG 7 · Azos 10" })}
+      ${fld("seg.franqAcid", "Franquia da DIT por acidente (dias)", { num: 1, hint: "Icatu 0 · MAG 7 · Azos 10" })}
+      ${fld("seg.retro", "Pagamento retroativo da franquia", { select: [["", "Não"], ["1", "Sim (Azos)"]] })}
       ${fld("seg.carencia", "Carência da DIT por doença (dias)", { num: 1, hint: "Contada da contratação" })}
     </div>
     <h3 style="margin-top:16px">Coberturas</h3>
@@ -355,16 +373,23 @@ async function importPdf(file) {
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     const lines = await P.linesFromPdf(pdf);
     const r = P.parse(lines);
-    if (!r) throw new Error("não reconheci o formato (esperado: Icatu Seguro Essencial ou Previdência Atitude+Simples)");
+    if (!r) throw new Error("não reconheci o formato (esperado: seguro da Icatu, MAG ou Azos, ou Previdência Icatu)");
     if (r.tipo === "seguro") {
       Object.assign(S.seg, {
         seguradora: r.seguradora, produto: r.produto, premio: String(r.premio || ""), nome: r.nome || "", idade: String(r.idade || ""),
         cobs: r.coberturas.map((c) => ({ nome: c.nome, capital: String(c.capital || ""), premio: String(c.premio || "") })),
         proj: r.projecao.map((p) => p.premio), franquia: String(r.ditFranquiaDias || 15), carencia: String(r.ditCarenciaDias || 60),
-        lerCar: r.lerCarenciaDias ? String(r.lerCarenciaDias) : "", lerMax: r.lerMaxDias ? String(r.lerMaxDias) : "", limPct: String(r.ditLimitePctMorte || 10)
+        lerCar: r.lerCarenciaDias ? String(r.lerCarenciaDias) : "", lerMax: r.lerMaxDias ? String(r.lerMaxDias) : "",
+        limPct: r.ditLimitePctMorte === 0 ? "0" : String(r.ditLimitePctMorte || 10),
+        ditMeses: String(r.ditMeses || 12), franqAcid: String(r.ditFranquiaAcidDias || 0), retro: r.ditRetroativo ? "1" : "", ler: r.ditLer ? "1" : ""
       });
       if (!S.cli.nome && r.nome) S.cli.nome = r.nome;
       if (!S.cli.idade && r.idade) S.cli.idade = String(r.idade);
+      // MAG e Azos trazem também renda, sexo e profissão: preenchem só o que estiver vazio
+      if (!S.cli.sexo && r.sexo) S.cli.sexo = r.sexo;
+      if (!S.cli.renda && r.renda) S.cli.renda = r.renda.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+      if (!S.cli.prof && r.profissao) { const p = profDeTexto(r.profissao); S.cli.prof = p.key; S.cli.profOutra = p.outra; }
+      if (r.validadeDias) S.sim.validade = String(r.validadeDias);
       S.imp.seg = file.name + " · " + r.coberturas.length + " coberturas";
     } else {
       // o PDF da previdência vira os campos do bloco; o site recalcula tudo
@@ -477,8 +502,8 @@ function page2(m) {
   <div class="bars">${simBars(m)}</div>
   <div class="cards">
     <div class="cardx r"><span class="k">Sem proteção</span><span class="v r">${brl0(m.perdaSem)}</span><span class="s">a menos em ${m.meses} meses${m.inss == null ? " (sem contar o INSS)" : ""}</span></div>
-    <div class="cardx g"><span class="k">Por acidente</span><span class="v g">${brl0(m.pagoAcid)}</span><span class="s">você recebe, desde o 1º dia de afastamento</span></div>
-    <div class="cardx g"><span class="k">Por doença</span><span class="v g">${brl0(m.pagoDoenca)}</span><span class="s">você recebe, a partir do ${m.franquia + 1}º dia de afastamento</span></div>
+    <div class="cardx g"><span class="k">Por acidente</span><span class="v g">${brl0(m.pagoAcid)}</span><span class="s">você recebe, ${m.iniAcid}</span></div>
+    <div class="cardx g"><span class="k">Por doença</span><span class="v g">${brl0(m.pagoDoenca)}</span><span class="s">você recebe, ${m.iniDoenca}</span></div>
   </div>
   ${rt ? `<div class="callout">${rt}</div>` : ""}
   <h2>E se eu guardar esse dinheiro?</h2>
@@ -501,7 +526,8 @@ function optItems(m, kind) {
 function page3(m) {
   const segRows = m.cobs.map((c) => {
     let d = "";
-    if (c === m.ditCob) d = `Paga por até ${m.ditMeses} meses. Acidente: desde o 1º dia. Doença: a partir do ${m.franquia + 1}º dia.` + (m.ler ? ` LER/DORT/LTC: carência de ${m.lerCar} dias, paga por até ${m.lerMax} dias.` : "");
+    if (c === m.ditCob) d = `Paga por até ${m.ditMeses} meses. ${m.mesmoInicio ? cap(m.quando) + "." : `Acidente: ${m.iniAcid}. Doença: ${m.iniDoenca}.`}` + (m.ler ? ` LER/DORT/LTC: carência de ${m.lerCar} dias, paga por até ${m.lerMax} dias.` : "");
+    else if (/fratura|ruptura/i.test(c.nome)) d = "Paga uma parte do capital em fraturas e em rupturas de tendões e ligamentos causadas por acidente, conforme a tabela da seguradora.";
     return `<tr><td>${esc(c.nome)}${d ? `<small>${d}</small>` : ""}</td><td class="n">${c.capital ? brl0(c.capital) + (c === m.ditCob ? "/mês" : "") : "—"}</td><td class="n">${c.premio ? brl(c.premio) : "incluído"}</td></tr>`;
   }).join("");
   const prevRows = m.prevOn ? `<tr class="grp"><td colspan="2">Icatu Seguros · ${esc(m.prevProduto)} · previdência${m.prevCobs.length ? " com proteção" : ""}</td><td class="n">${brl(m.prevTot)}</td></tr>
@@ -536,7 +562,7 @@ const totPag = (m) => (m.prevOn ? 4 : 3);
 function detalhes(m) {
   return `<h2>Regras importantes</h2>
   <ul class="rules">
-    <li>Renda por afastamento: por acidente, desde o 1º dia; por doença, a partir do ${m.franquia + 1}º dia de afastamento, com carência de ${m.carencia} dias contados da contratação.</li>
+    <li>Renda por afastamento: ${m.mesmoInicio ? m.quando : `por acidente, ${m.iniAcid}; por doença, ${m.iniDoenca}`}, com carência de ${m.carencia} dias para doença, contados da contratação.</li>
     ${m.ler ? `<li>Lesões por esforço repetitivo (LER, DORT e LTC): carência de ${m.lerCar} dias e pagamento por até ${m.lerMax} dias.</li>` : ""}
     ${m.dg ? `<li>Doenças graves: carência de 60 dias. Paga uma doença diagnosticada durante a vigência, estando o segurado vivo 30 dias após o diagnóstico.</li>` : ""}
     <li>Valores atualizados todo ano pelo IPCA, e o prêmio do seguro é reajustado conforme a idade no aniversário da apólice.</li>
@@ -609,20 +635,20 @@ function slideHtml(id, m) {
       <div style="display:flex;flex-direction:column;gap:36px;margin-top:56px">${simBars(m, true).replace(/class="brow"/g, 'class="brow"')}</div>
       <div style="display:flex;gap:30px;margin-top:auto">
         <div class="box" style="flex:1;background:#FDF0F0"><div class="k">Sem proteção, em ${m.meses} meses</div><div class="bign" style="font-size:60px;color:#C0363B">− ${brl0(m.perdaSem)}</div></div>
-        <div class="box" style="flex:1;background:#EAF4E3"><div class="k">Por acidente · 1º dia</div><div class="bign" style="font-size:60px;color:#3F7F2E">+ ${brl0(m.pagoAcid)}</div></div>
-        <div class="box" style="flex:1;background:#EAF4E3"><div class="k">Por doença · ${m.franquia + 1}º dia</div><div class="bign" style="font-size:60px;color:#3F7F2E">+ ${brl0(m.pagoDoenca)}</div></div>
+        <div class="box" style="flex:1;background:#EAF4E3"><div class="k">Por acidente · ${m.diaAcid}º dia</div><div class="bign" style="font-size:60px;color:#3F7F2E">+ ${brl0(m.pagoAcid)}</div></div>
+        <div class="box" style="flex:1;background:#EAF4E3"><div class="k">Por doença · ${m.diaDoenca}º dia</div><div class="bign" style="font-size:60px;color:#3F7F2E">+ ${brl0(m.pagoDoenca)}</div></div>
       </div>${rt ? `<div style="margin-top:22px;font-size:27px;color:#5A3D00;background:#FFF6E2;border-radius:20px;padding:18px 28px">${rt}</div>` : ""}</div>`);
     }
     case "inss": return sl("soft", `<div class="pad"><div class="t2" style="margin-top:0">INSS x Proteção de renda</div>
       <table class="t" style="margin-top:44px"><tr><th></th><th>Só o INSS</th><th class="b">Com a proteção</th></tr>
-      <tr><td class="k2">Quando começa</td><td>Depois da perícia</td><td class="b">Acidente: 1º dia · Doença: ${m.franquia + 1}º dia</td></tr>
+      <tr><td class="k2">Quando começa</td><td>Depois da perícia</td><td class="b">Acidente: ${m.diaAcid}º dia · Doença: ${m.diaDoenca}º dia${m.retro ? " (retroativo)" : ""}</td></tr>
       <tr><td class="k2">Quanto por mês</td><td>${m.inss != null ? "Cerca de " + brl0(m.inss) : "Limitado ao teto"}</td><td class="b">+ ${brl0(m.dit)} por até ${m.ditMeses} meses</td></tr>
       <tr><td class="k2">Como recebe</td><td>Perícia agendada, com fila</td><td class="b">Atestado médico e documentos</td></tr>
       <tr><td class="k2">Doença grave</td><td>Sem pagamento específico</td><td class="b">${m.dg ? brl0(m.dg) + " no diagnóstico" : "—"}</td></tr>
       <tr><td class="k2">Invalidez</td><td>Aposentadoria, limitada ao teto</td><td class="b">${m.ipa ? brl0(m.ipa) + " por acidente" : "—"}${m.prevOn && m.riscoCap ? " + " + brl0(m.riscoCap) + "/mês vitalício" : ""}</td></tr></table></div>`);
     case "recebe": {
       const items = [
-        { h: "Se precisar parar", n: brl0(m.dit) + "/mês", d: `por até ${m.ditMeses} meses · acidente desde o 1º dia, doença a partir do ${m.franquia + 1}º dia` },
+        { h: "Se precisar parar", n: brl0(m.dit) + "/mês", d: `por até ${m.ditMeses} meses · ${m.quando}` },
         m.dg ? { h: "Doença grave", n: brl0(m.dg), d: "de uma vez, no diagnóstico de 24 doenças, como câncer, AVC e infarto. Você usa como quiser, inclusive no tratamento" } : null,
         { h: "Invalidez", n: m.ipa ? brl0(m.ipa) : "—", d: (m.ipa ? "por acidente, total ou proporcional" : "") + (m.prevOn && m.riscoCap ? ` · + ${brl0(m.riscoCap)}/mês vitalício por acidente ou doença` : "") },
         m.morte ? { h: "Para a família", n: brl0(m.morte), d: [m.apoio ? `+ ${brl0(m.apoio)} de apoio imediato` : "", m.funeral ? "assistência funeral" : "", m.adiant ? "adiantamento em doença terminal" : ""].filter(Boolean).join(" · ") } : null
@@ -794,7 +820,7 @@ function waTexts(m) {
   const risco = m.inss != null
     ? `Hoje, se você precisar parar de trabalhar, a sua renda cai de ${B(brl0(m.renda))} para cerca de ${B(brl0(m.inss))} (INSS). Em ${m.meses} meses, são ${B(brl0(m.perdaSem) + " a menos")}.`
     : `Hoje, se você precisar parar de trabalhar, a renda deixa de entrar. Em ${m.meses} meses, são ${B(brl0(m.perdaSem) + " a menos")}.`;
-  const bens = [`✅ ${B(brl0(m.dit) + " por mês")} se precisar se afastar (acidente desde o 1º dia; doença a partir do ${m.franquia + 1}º dia)`];
+  const bens = [`✅ ${B(brl0(m.dit) + " por mês")} se precisar se afastar (${m.quando})`];
   if (m.dg) bens.push(`✅ ${B(brl0(m.dg))} de uma vez no diagnóstico de doença grave, para usar como quiser, inclusive no tratamento`);
   if (m.ipa) bens.push(`✅ ${B(brl0(m.ipa))} em caso de invalidez por acidente`);
   if (foco === "completa") m.prevCobs.forEach((c) => bens.push(c.tipo === "rendaInv" ? `✅ ${B(brl0(c.valor) + " por mês")}, por toda a vida, se não puder mais trabalhar` : `✅ ${c.curto}`));
@@ -910,7 +936,7 @@ function waLib(m) {
           `Como você se sentiria sabendo que, se precisar parar, a sua renda continua entrando?`] },
     { g: "Conduzir a conversa", id: "estudo", t: "Envio do estudo", quando: "Só depois que ele confirmar que o valor da proteção faz sentido. Mande esta mensagem e o PDF logo em seguida. Os valores vão em <b>negrito</b> e a pergunta em <i>itálico</i> (veja em Prévia). O áudio é opcional: explica o estudo em cerca de 1 minuto, logo depois do PDF.",
       b: [t.wa1],
-      a: temEstudo ? [`Oi, ${n}! Acabei de te mandar o seu estudo, mas quero te explicar rapidinho o que tem nele. [pausa]\n${m.inss != null ? `Hoje, se você precisar parar de trabalhar, a sua renda cai de ${falar(m.renda)} pra mais ou menos ${falar(m.inss)}, que é o que o INSS pagaria.` : "Hoje, se você precisar parar de trabalhar, a sua renda simplesmente deixa de entrar."} Num afastamento de ${extenso(m.meses)} meses, isso dá ${falar(m.perdaSem)} a menos. [pausa]\nCom a proteção que eu montei, você recebe ${falar(m.dit)} por mês enquanto estiver se recuperando: no caso de acidente, desde o primeiro dia, e no de doença, depois dos primeiros ${extenso(m.franquia)} dias.${m.dg ? ` E se for uma doença grave, você ainda recebe ${falar(m.dg)} de uma vez, pra usar como quiser, inclusive no tratamento.` : ""} [pausa]\nO investimento fica em cerca de ${falar(V)} por mês. Dá uns ${falar(m.dia(V))} por dia. [pausa]\nDá uma olhada com calma no PDF e me fala: esse valor de ${falar(m.dit)} por mês cobriria as suas contas, ou você prefere que eu ajuste?`] : null },
+      a: temEstudo ? [`Oi, ${n}! Acabei de te mandar o seu estudo, mas quero te explicar rapidinho o que tem nele. [pausa]\n${m.inss != null ? `Hoje, se você precisar parar de trabalhar, a sua renda cai de ${falar(m.renda)} pra mais ou menos ${falar(m.inss)}, que é o que o INSS pagaria.` : "Hoje, se você precisar parar de trabalhar, a sua renda simplesmente deixa de entrar."} Num afastamento de ${extenso(m.meses)} meses, isso dá ${falar(m.perdaSem)} a menos. [pausa]\nCom a proteção que eu montei, você recebe ${falar(m.dit)} por mês enquanto estiver se recuperando: ${m.quandoFala}.${m.dg ? ` E se for uma doença grave, você ainda recebe ${falar(m.dg)} de uma vez, pra usar como quiser, inclusive no tratamento.` : ""} [pausa]\nO investimento fica em cerca de ${falar(V)} por mês. Dá uns ${falar(m.dia(V))} por dia. [pausa]\nDá uma olhada com calma no PDF e me fala: esse valor de ${falar(m.dit)} por mês cobriria as suas contas, ou você prefere que eu ajuste?`] : null },
     ...(m.prevOn ? [{ g: "Conduzir a conversa", id: "completa", t: "Apresentar a Completa", quando: "Quando ele mostrar interesse e perguntar pela previdência, ou para justificar a diferença de valor. Use o pilar \"planejamento financeiro\" da proposta de valor. <b>A última mensagem é opcional:</b> só vale para quem faz a declaração completa do IR e contrata o plano PGBL.",
       b: [`A opção Completa junta duas coisas: proteger a sua renda de hoje e construir a de amanhã.`,
           `Além do seguro, ${brl(m.aporte)} por mês vão para uma previdência no seu nome (estimativa de ${short(m.reserva)} aos ${m.idadeApos} anos)${m.riscoCap ? `, e você passa a ter ${brl0(m.riscoCap)} por mês, por toda a vida, se não puder mais trabalhar, por acidente ou doença` : ""}.`,
@@ -941,9 +967,9 @@ function waLib(m) {
       a: temEstudo ? [`Entendo, ${n}. Deixa eu te mostrar por outro ângulo. [pausa]\nSão uns ${falar(m.dia(V))} por dia pra garantir ${falar(m.dit)} por mês se você precisar parar. [pausa]\nSe você guardasse esse valor por conta própria, em um ano teria uns ${falar(foco === "completa" ? fv(m.completa, m.taxaGuardar, 12) : g1.v)}. Já num afastamento de ${extenso(m.meses)} meses por acidente, o seguro te pagaria ${falar(m.pagoAcid)}. [pausa]\n${foco === "completa" ? "Se preferir, a gente começa só pelo seguro, e a previdência entra depois." : "E se ficar apertado, eu consigo ajustar o valor da renda pra caber melhor no seu orçamento. Quanto ficaria confortável por mês pra você?"}`] : null },
     { g: "O cliente respondeu…", id: "inss", t: "\"Já pago o INSS\"", quando: "Concorde e mostre a diferença de valor e de prazo.",
       b: [`Ótimo, o INSS é importante e continua valendo. A diferença está no valor e no prazo.`,
-          `${m.inss != null ? `Ele pagaria cerca de ${brl0(m.inss)}` : "Ele paga um valor limitado ao teto"}, e só depois da perícia. A proteção soma ${D} por mês: por acidente desde o 1º dia, por doença a partir do ${m.franquia + 1}º dia.`,
+          `${m.inss != null ? `Ele pagaria cerca de ${brl0(m.inss)}` : "Ele paga um valor limitado ao teto"}, e só depois da perícia. A proteção soma ${D} por mês: ${m.quando}.`,
           m.inss != null ? `Com os dois juntos, a sua renda durante o afastamento ficaria em ${brl0(m.rendaCom)} por mês, contra ${R} de hoje. Faz sentido para você?` : `Faz sentido para você somar as duas coisas?`],
-      a: temEstudo ? [`Que bom que você contribui, ${n}. O INSS é importante e continua valendo. [pausa]\nA diferença tá no valor e no prazo. ${m.inss != null ? `Ele te pagaria mais ou menos ${falar(m.inss)} por mês` : "Ele paga um valor limitado ao teto"}, e só depois da aprovação. [pausa]\nA proteção soma ${falar(m.dit)} por mês: por acidente, desde o primeiro dia, e por doença, depois dos primeiros ${extenso(m.franquia)} dias. [pausa]\n${m.inss != null ? `Com os dois juntos, a sua renda no afastamento ficaria em uns ${falar(m.rendaCom)} por mês. Faz sentido pra você?` : "Faz sentido pra você somar as duas coisas?"}`] : null },
+      a: temEstudo ? [`Que bom que você contribui, ${n}. O INSS é importante e continua valendo. [pausa]\nA diferença tá no valor e no prazo. ${m.inss != null ? `Ele te pagaria mais ou menos ${falar(m.inss)} por mês` : "Ele paga um valor limitado ao teto"}, e só depois da aprovação. [pausa]\nA proteção soma ${falar(m.dit)} por mês: ${m.quandoFala}. [pausa]\n${m.inss != null ? `Com os dois juntos, a sua renda no afastamento ficaria em uns ${falar(m.rendaCom)} por mês. Faz sentido pra você?` : "Faz sentido pra você somar as duas coisas?"}`] : null },
     { g: "O cliente respondeu…", id: "reserva", t: "\"Já tenho reserva\"", quando: "Valorize a reserva e mostre que o seguro existe para que ela não seja consumida.",
       b: [`Ótimo, ter reserva é o primeiro passo.`,
           `A pergunta é: você quer usar essa reserva para pagar as contas de um afastamento ou para os seus planos? O seguro existe para que ela fique intacta.`,
@@ -978,7 +1004,7 @@ function waLib(m) {
     { g: GRUPO_EMAIL, id: "em_inss", t: "O limite do INSS", email: true,
       quando: "<b>5 dias</b> depois do envio, sem resposta. Mostra o que o INSS pagaria com a renda dele.",
       b: [`${n}, o que o INSS pagaria se você precisasse parar?`,
-          `Oi, ${n}, tudo bem?\n\nUma informação que pouca gente sabe: num afastamento, o benefício do INSS é de 91% da média das contribuições, com limite de cerca de ${brl0(inssMax)} por mês, e só começa depois da perícia.${faltaInss ? `\n\nCom uma renda de ${R}, mesmo contribuindo pelo teto, faltariam pelo menos ${brl0(faltaInss)} todo mês.` : ""}${m.inss != null && temEstudo ? `\n\nNo seu estudo, o INSS pagaria cerca de ${brl0(m.inss)}. Com a proteção somando ${D} por mês, a sua renda durante o afastamento ficaria em ${brl0(m.rendaCom)}, contra ${R} de hoje.` : ""}\n\nA proteção de renda cobre essa diferença: por acidente desde o 1º dia, por doença a partir do ${m.franquia + 1}º dia.\n\nQuer que eu te explique como fica no seu caso? É só responder este e-mail.${ASS}`] },
+          `Oi, ${n}, tudo bem?\n\nUma informação que pouca gente sabe: num afastamento, o benefício do INSS é de 91% da média das contribuições, com limite de cerca de ${brl0(inssMax)} por mês, e só começa depois da perícia.${faltaInss ? `\n\nCom uma renda de ${R}, mesmo contribuindo pelo teto, faltariam pelo menos ${brl0(faltaInss)} todo mês.` : ""}${m.inss != null && temEstudo ? `\n\nNo seu estudo, o INSS pagaria cerca de ${brl0(m.inss)}. Com a proteção somando ${D} por mês, a sua renda durante o afastamento ficaria em ${brl0(m.rendaCom)}, contra ${R} de hoje.` : ""}\n\nA proteção de renda cobre essa diferença: ${m.quando}.\n\nQuer que eu te explique como fica no seu caso? É só responder este e-mail.${ASS}`] },
     { g: GRUPO_EMAIL, id: "em_duvidas", t: "Dúvidas que sempre aparecem", email: true,
       quando: "<b>10 dias</b> depois do envio, sem resposta. Responde as objeções mais comuns sem ele precisar perguntar.",
       b: [`3 dúvidas que sempre aparecem sobre proteção de renda`,

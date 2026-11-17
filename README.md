@@ -159,6 +159,22 @@ docker compose exec app node server/cli.js desativar email@dominio.com
 - Precisa do cliente salvo. Depois do envio, o cliente fica com o e-mail usado, o status passa para **Estudo enviado** (menos fechado ou perdido) e o histórico registra o envio.
 - **Configuração (uma vez):** em myaccount.google.com → Segurança, ative a verificação em duas etapas e crie uma **senha de app** ("Renda Protegida"). No EasyPanel, em renda → app → **Environment**, acrescente `SMTP_USER=edgartorres@setornorteseguros.com.br` e `SMTP_PASS=` com a senha de app, salve e clique em **Deploy**. Sem essas variáveis, o botão explica o que falta.
 
+### Cotações de seguro: Icatu, MAG e Azos (aba Dados)
+
+- O site reconhece sozinho de qual seguradora é o PDF: Icatu (Seguro Essencial), MAG (Vida Toda) ou Azos.
+- A tabela da cotação é lida linha a linha: **toda cobertura entra no estudo**, mesmo uma que o site não conhece. As que ele não conhece aparecem na **Conferência** como "Cobertura nova", para conferir o nome. Vale também para a Icatu.
+- MAG e Azos trazem renda, sexo e idade (a MAG pela data de nascimento); a Azos traz a profissão. Preenchem a aba Dados só onde estiver vazio. A validade do estudo segue a da cotação (MAG 30 dias, Azos 7).
+- Na Azos, a renda por afastamento vem por dia e vira por mês (×30).
+- Regras da renda por afastamento, usadas nos textos do estudo, dos slides e das mensagens e na conta do afastamento:
+
+| | Começa a pagar | Paga por até | LER/DORT | Carência (doença) |
+|---|---|---|---|---|
+| Icatu | acidente no 1º dia; doença no 16º | 12 meses | carência 150 dias, até 90 dias | 60 dias |
+| MAG | 8º dia, acidente ou doença | 12 meses (365 diárias) | carência 150 dias, até 90 diárias | 60 dias |
+| Azos | franquia de 10 dias com retroativo: passou de 10 dias, paga desde o 1º | 24 meses (730 diárias) | carência 180 dias, até 120 diárias | 60 dias |
+
+- O limite "renda por afastamento até 10% da morte" é regra da Icatu e só é conferido nela. Os campos de franquia (doença e acidente) e retroativo podem ser ajustados à mão no bloco Seguro de vida.
+
 ### Previdência (aba Dados)
 
 A previdência é calculada no próprio site, com as mesmas fórmulas da planilha "Gerador_estudo_previdencia" da Icatu. O PDF de previdência continua podendo ser importado, mas é opcional.
@@ -229,5 +245,7 @@ BASE=http://localhost:3001 DB_PATH=/tmp/teste.db node test/api.test.js
 ```
 
 Teste do cálculo da previdência (53 verificações, não precisa do servidor): `node server/test/prev.test.js`.
+
+Teste da leitura das cotações Icatu, MAG e Azos (6 verificações, com dados fictícios, não precisa do servidor): `node server/test/cotacoes.test.js`.
 
 Teste da leitura do webhook do RD (15 verificações, não precisa do servidor): `node server/test/rd.test.js`.
